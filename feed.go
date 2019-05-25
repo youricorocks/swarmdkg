@@ -1,5 +1,7 @@
 package swarmdkg
 
+import "github.com/ethereum/go-ethereum/swarm/storage/feed"
+
 /*
 // Phase I
 	SendDeals,
@@ -23,7 +25,10 @@ type Stream struct {
 	Feeds []Feed
 }
 
-type MyFeed struct{}
+type MyFeed struct{
+	Feed
+	feed.Signer
+}
 
 // Только читаем из фида
 type Feed struct{}
