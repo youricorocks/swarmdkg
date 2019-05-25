@@ -98,10 +98,6 @@ func TestBzzStream(t *testing.T) {
 	srv := http.NewTestSwarmServer(t, func(i *api.API) http.TestServer {
 		return http.NewServer(i, "")
 	}, nil)
-	defer func() {
-		fmt.Println("*** Server is closed ***")
-		srv.Close()
-	}()
 
 	const numUsers = 5
 	var myFeeds []*MyFeed
@@ -118,6 +114,7 @@ func TestBzzStream(t *testing.T) {
 	}
 
 	var streams []*Stream
+	var closers []func()
 	for i := range myFeeds {
 		var streamFeeds []*Feed
 		for j := 0; j < numUsers; j++ {
@@ -128,16 +125,27 @@ func TestBzzStream(t *testing.T) {
 			streamFeeds = append(streamFeeds, NewFeed(f.Topic, f.User, f.URL))
 		}
 
-		streams = append(streams, NewStream(myFeeds[i], streamFeeds))
+		stream := NewStream(myFeeds[i], streamFeeds)
+		closers = append(closers, stream.Close)
+		streams = append(streams, stream)
 	}
+
+	defer func() {
+		for _, closeFunc := range closers {
+			closeFunc()
+		}
+
+		fmt.Println("*** Server is closed ***")
+		srv.Close()
+	}()
 
 	// creates feed and sets update 1
 	for i, stream := range streams {
 		stream.Broadcast(updateData[i])
 	}
 
-	//
-	time.Sleep(5*time.Second)
+	//wait for a broadcast
+	time.Sleep(1 * time.Second)
 
 	wg := sync.WaitGroup{}
 	for i := range streams {
@@ -179,34 +187,8 @@ func TestBzzStream(t *testing.T) {
 	fmt.Println("done")
 }
 
-func TestBzzStream1(t *testing.T) {
-	srv := http.NewTestSwarmServer(t, func(i *api.API) http.TestServer {
-		return http.NewServer(i, "")
-	}, nil)
-	defer srv.Close()
-
-	const numUsers = 1
-	var feeds []*MyFeed
-	var updateData [][]byte
-
-	// data of update 1
-	update1Timestamp := srv.CurrentTime
-	_ = update1Timestamp
-
-	for i := 0; i < numUsers; i++ {
-		signer, _ := newTestSigner()
-		feeds = append(feeds, NewMyFeed("foo.eth", signer, srv.URL))
-		updateData = append(updateData, testutil.RandomBytes(i, 666))
-	}
-
-	// creates feed and sets update 1
-	feeds[0].Broadcast(updateData[0])
-
-	msg, err := feeds[0].Read()
-	fmt.Println("!!!!!!!", err, msg)
-}
-
 var counter = new(int64)
+
 func init() {
 	*counter = 48879 //hex 'beef'
 }
@@ -214,7 +196,7 @@ func init() {
 func newTestSigner() (*feed.GenericSigner, error) {
 	tailBytes := fmt.Sprintf("%04x", atomic.AddInt64(counter, 1)-1)
 
-	privKey, err := crypto.HexToECDSA("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdead"+tailBytes)
+	privKey, err := crypto.HexToECDSA("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdead" + tailBytes)
 	if err != nil {
 		return nil, err
 	}

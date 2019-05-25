@@ -14,6 +14,7 @@ type Stream struct {
 	Feeds    []*Feed
 	Messages chan []byte
 	cache    map[string]map[common.Address]map[string]struct{} //map[topic][user][msg]struct{}
+	close    chan struct{}
 	sync.Mutex
 }
 
@@ -23,14 +24,13 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 		Feeds:    feeds,
 		Messages: make(chan []byte, 1024),
 		cache:    make(map[string]map[common.Address]map[string]struct{}),
+		close:    make(chan struct{}),
 	}
 
 	go func() {
-		//fixme introduce context to cancel the goroutine
 		timer := time.NewTicker(1 * time.Second)
 		defer timer.Stop()
 
-		// fixme do requests in goroutines
 		t := time.Now()
 		for {
 			now := uint64(t.Unix())
@@ -84,7 +84,12 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 			}
 			wg.Start()
 
-			t = <-timer.C
+			select {
+			case <-s.close:
+				return
+			case t = <-timer.C:
+				//nothing to do
+			}
 		}
 	}()
 
@@ -97,4 +102,8 @@ func (s *Stream) Broadcast(msg []byte) {
 
 func (s *Stream) Read() chan []byte {
 	return s.Messages
+}
+
+func (s *Stream) Close() {
+	close(s.close)
 }
