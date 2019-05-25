@@ -1,10 +1,14 @@
 package swarmdkg
 
 import (
+	"encoding/json"
+	"fmt"
 	"github.com/pkg/errors"
 	"go.dedis.ch/kyber"
 	"go.dedis.ch/kyber/pairing/bn256"
+	rabin "go.dedis.ch/kyber/share/dkg/rabin"
 	"go.dedis.ch/kyber/util/key"
+	"sort"
 	"time"
 )
 
@@ -18,6 +22,12 @@ const (
 )
 
 var timeoutErr = errors.New("timeout")
+
+type DKGMessage struct {
+	Data    []byte
+	ToIndex int
+	From    int
+}
 
 type Streamer interface {
 	Broadcast(msg []byte)
@@ -60,11 +70,12 @@ type DKGInstance struct {
 	KeyPair    *key.Pair
 
 	pubkeys []kyber.Point
+	Index   int
 }
 
 func (i *DKGInstance) SendPubkey() error {
-	keyPair := key.NewKeyPair(i.Suite)
-	publicKeyBin, err := keyPair.Public.MarshalBinary()
+	i.KeyPair = key.NewKeyPair(i.Suite)
+	publicKeyBin, err := i.KeyPair.Public.MarshalBinary()
 	if err != nil {
 		return err
 	}
@@ -98,6 +109,52 @@ func (i *DKGInstance) ReceivePubkeys() error {
 }
 
 func (i *DKGInstance) SendDeals() error {
+	sort.Slice(i.pubkeys, func(k, m int) bool {
+		return i.pubkeys[k].String() > i.pubkeys[m].String()
+	})
+
+	for j, p := range i.pubkeys {
+		if p.Equal(i.KeyPair.Public) {
+			i.Index = j
+			break
+		}
+		if j == i.NumOfNodes-1 && i.Index == 0 {
+			return errors.New("my key is not existed")
+		}
+	}
+
+	fmt.Println("LN", len(i.pubkeys))
+	dkgInstance, err := rabin.NewDistKeyGenerator(i.Suite, i.KeyPair.Private, i.pubkeys, i.Treshold)
+	if err != nil {
+		return fmt.Errorf("Dkg instance init error: %v", err)
+	}
+	deals, err := dkgInstance.Deals()
+	if err != nil {
+		return fmt.Errorf("deal generation error: %v", err)
+	}
+
+	fmt.Println(i.Index, "ln deals", len(deals))
+	for toIndex, deal := range deals {
+		b, err := json.Marshal(deal)
+		if err != nil {
+			fmt.Println("marshall err1", err)
+			return err
+		}
+		msg := DKGMessage{
+			Data:    b,
+			ToIndex: toIndex,
+			From:    i.Index,
+		}
+		msgBin, err := json.Marshal(msg)
+		if err != nil {
+			fmt.Println("marshall err2", err)
+			return err
+		}
+
+		i.Streamer.Broadcast(msgBin)
+	}
+	fmt.Println("deals sent", i.Index)
+
 	return nil
 }
 func (i *DKGInstance) ProcessDeals() error {
@@ -151,11 +208,13 @@ func (i *DKGInstance) Run() error {
 			i.moveToState(STATE_PROCESS_DEALS)
 
 		default:
+			fmt.Println("default Exit")
 			return errors.New("unknown state")
 		}
 	}
 	return nil
 }
 func (i *DKGInstance) moveToState(state int) {
+	fmt.Println("Move form", i.State, "to", state)
 	i.State = state
 }

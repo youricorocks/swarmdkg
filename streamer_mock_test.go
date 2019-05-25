@@ -3,7 +3,7 @@ package swarmdkg
 func NewReadChans(numOfNodes int) []chan []byte {
 	chans := make([]chan []byte, numOfNodes)
 	for i := range chans {
-		chans[i] = make(chan []byte, 10)
+		chans[i] = make(chan []byte, 1024)
 	}
 	return chans
 }
