@@ -137,10 +137,9 @@ func TestBzzFeed(t *testing.T) {
 	}
 	urlQuery = testUrl.Query()
 	body = updateRequest.AppendValues(urlQuery) // this adds all query parameters
-	goodQueryParameters := urlQuery.Encode()    // save the query parameters for a second attempt
 
 	// update data with good query parameters:
-	testUrl.RawQuery = goodQueryParameters
+	testUrl.RawQuery = urlQuery.Encode()
 	resp, err = http.Post(testUrl.String(), "application/octet-stream", bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
