@@ -220,6 +220,8 @@ func newTestSigner() (*feed.GenericSigner, error) {
 // params[1] - additional base url (feed, raw, etc)
 // params[2..] - additional query parameters in form "key=value"
 func testBZZGetRequest(t *testing.T, url string, params...string) ([]byte, int)  {
+	t.Helper()
+
 	res, respCode, err := GetRequestBZZ(url, params...)
 	if err != nil {
 		t.Fatal(err)
