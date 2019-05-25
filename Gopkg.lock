@@ -2,6 +2,14 @@
 
 
 [[projects]]
+  branch = "master"
+  digest = "1:ca6d922eed638196ae64eee77403493076fe227a27c9474a83597d75b1af8da2"
+  name = "github.com/JekaMas/awg"
+  packages = ["."]
+  pruneopts = ""
+  revision = "a74bd21c83596ea4bfff55cb48046430bab20f6f"
+
+[[projects]]
   digest = "1:7aee01682d4a712c573efb44394d5d051eff87c94c50f74c221982dd01d6d9a7"
   name = "github.com/allegro/bigcache"
   packages = [
@@ -472,12 +480,15 @@
   analyzer-name = "dep"
   analyzer-version = 1
   input-imports = [
+    "github.com/JekaMas/awg",
+    "github.com/ethereum/go-ethereum/common",
     "github.com/ethereum/go-ethereum/crypto",
     "github.com/ethereum/go-ethereum/swarm/api",
     "github.com/ethereum/go-ethereum/swarm/api/http",
     "github.com/ethereum/go-ethereum/swarm/storage",
     "github.com/ethereum/go-ethereum/swarm/storage/feed",
     "github.com/ethereum/go-ethereum/swarm/testutil",
+    "github.com/pkg/errors",
     "go.dedis.ch/kyber",
     "go.dedis.ch/kyber/pairing/bn256",
     "go.dedis.ch/kyber/share/dkg/rabin",
