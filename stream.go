@@ -26,7 +26,7 @@ func (s Stream) Read() chan []byte {
 		defer timer.Stop()
 
 		// fixme do requests in goroutines
-		for range timer.C {
+		for t := range timer.C {
 			msg, err := s.Own.Read()
 			if err != nil {
 				fmt.Println("Error while reading own feed", err)
@@ -35,18 +35,15 @@ func (s Stream) Read() chan []byte {
 				s.Messages <- msg
 			}
 
-			// fixme нам нужен hash манифестов фидов - feed.Read(manifestHash)
-			/*
-				for _, feed := range s.Feeds {
-					msg, err = feed.Read()
-					if err != nil {
-						fmt.Println("Error while reading own feed", err)
-					}
-					if msg = feed.Read(); len(msg) != 0 {
-						s.Messages <- msg
-					}
+			for _, feed := range s.Feeds {
+				msg, err = feed.Get(uint64(t.Unix()))
+				if err != nil {
+					fmt.Println("Error while reading own feed", err)
 				}
-			*/
+				if len(msg) != 0 {
+					s.Messages <- msg
+				}
+			}
 		}
 	}()
 

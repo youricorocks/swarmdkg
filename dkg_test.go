@@ -2,7 +2,6 @@ package swarmdkg
 
 import (
 	"bytes"
-	"fmt"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/swarm/api"
 	sr "github.com/ethereum/go-ethereum/swarm/api/http"
@@ -21,6 +20,7 @@ func TestBzzMyFeed(t *testing.T) {
 
 	// data of update 1
 	update1Data := testutil.RandomBytes(1, 666)
+	update1Timestamp := srv.CurrentTime
 	signer, _ := newTestSigner()
 
 	myFeed := NewMyFeed("foo.eth", signer, srv.URL)
@@ -77,6 +77,18 @@ func TestBzzMyFeed(t *testing.T) {
 	if !bytes.Equal(update2Data, res) {
 		t.Fatalf("Expected body '%x', got '%x'", update2Data, res)
 	}
+
+	// test manifest-less queries
+	t.Log("get first update in update1Timestamp via direct query")
+	foreignFeed := NewFeed("foo.eth", signer.Address(), srv.URL)
+	res, err = foreignFeed.Get(update1Timestamp)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !bytes.Equal(update1Data, res) {
+		t.Fatalf("Expected body '%x', got '%x'", update1Data, res)
+	}
 }
 
 func newTestSigner() (*feed.GenericSigner, error) {
@@ -85,24 +97,6 @@ func newTestSigner() (*feed.GenericSigner, error) {
 		return nil, err
 	}
 	return feed.NewGenericSigner(privKey), nil
-}
-
-// params[0] - resourceHash
-// params[1] - additional base url (feed, raw, etc)
-// params[2..] - additional query parameters in form "key=value"
-func testBZZGetRequest(t *testing.T, url string, params ...string) ([]byte, int) {
-	t.Helper()
-
-	res, respCode, err := GetRequestBZZ(url, params...)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return res, respCode
-}
-
-func formQueryValue(key, value string) string {
-	return fmt.Sprintf("%s=%s", key, value)
 }
 
 func TestMockDKG(t *testing.T) {
