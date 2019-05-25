@@ -1,0 +1,7 @@
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+Starting bootnode node - Пт мая 24 22:11:26 MSK 2019
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+start-stop-daemon: unrecognized option '--addr'
+Try 'start-stop-daemon --help' for more information.

@@ -1,6 +1,7 @@
 package swarmdkg
 
 import (
+	"strconv"
 	"testing"
 	"github.com/ethereum/go-ethereum/swarm/storage/feed"
 	"github.com/ethereum/go-ethereum/swarm/storage/feed/lookup"
@@ -22,20 +23,17 @@ func TestBzzFeed(t *testing.T) {
 	srv := sr.NewTestSwarmServer(t, func(i *api.API) sr.TestServer {
 		return sr.NewServer(i, "")
 	}, nil)
-	signer, _ := newTestSigner()
-
-	defer srv.Close()
 
 	// data of update 1
 	update1Data := testutil.RandomBytes(1, 666)
 	update1Timestamp := srv.CurrentTime
-	//data for update 2
-	update2Data := []byte("foo")
 
 	topic, _ := feed.NewTopic("foo.eth", nil)
 	updateRequest := feed.NewFirstRequest(topic)
 	updateRequest.SetData(update1Data)
 
+	signer, _ := newTestSigner()
+	defer srv.Close()
 	if err := updateRequest.Sign(signer); err != nil {
 		t.Fatal(err)
 	}
@@ -74,27 +72,20 @@ func TestBzzFeed(t *testing.T) {
 	}
 
 	// get the manifest
-	testRawUrl := fmt.Sprintf("%s/bzz-raw:/%s", srv.URL, rsrcResp)
-	resp, err = http.Get(testRawUrl)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	res, statusCode := testBZZGetRequest(t, srv.URL, rsrcResp.String(), "raw")
+	if statusCode != http.StatusOK {
 		t.Fatalf("err %s", resp.Status)
 	}
-	b, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
+
 	manifest := &api.Manifest{}
-	err = json.Unmarshal(b, manifest)
+	err = json.Unmarshal(res, manifest)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(manifest.Entries) != 1 {
 		t.Fatalf("Manifest has %d entries", len(manifest.Entries))
 	}
+
 	correctFeedHex := "0x666f6f2e65746800000000000000000000000000000000000000000000000000c96aaa54e2d44c299564da76e1cd3184a2386b8d"
 	if manifest.Entries[0].Feed.Hex() != correctFeedHex {
 		t.Fatalf("Expected manifest Feed '%s', got '%s'", correctFeedHex, manifest.Entries[0].Feed.Hex())
@@ -102,49 +93,19 @@ func TestBzzFeed(t *testing.T) {
 
 	// take the chance to have bzz: crash on resolving a feed update that does not contain
 	// a swarm hash:
-	testBzzUrl := fmt.Sprintf("%s/bzz:/%s", srv.URL, rsrcResp)
-	resp, err = http.Get(testBzzUrl)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusOK {
+	_, statusCode = testBZZGetRequest(t, srv.URL, rsrcResp.String())
+	if statusCode == http.StatusOK {
 		t.Fatal("Expected error status since feed update does not contain a Swarm hash. Received 200 OK")
 	}
-	_, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// get non-existent name, should fail
-	testBzzResUrl := fmt.Sprintf("%s/bzz-feed:/bar", srv.URL)
-	resp, err = http.Get(testBzzResUrl)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if resp.StatusCode != http.StatusNotFound {
-		t.Fatalf("Expected get non-existent feed manifest to fail with StatusNotFound (404), got %d", resp.StatusCode)
-	}
-
-	resp.Body.Close()
 
 	// get latest update through bzz-feed directly
 	t.Log("get update latest = 1.1", "addr", correctManifestAddrHex)
-	testBzzResUrl = fmt.Sprintf("%s/bzz-feed:/%s", srv.URL, correctManifestAddrHex)
-	resp, err = http.Get(testBzzResUrl)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+
+	res, statusCode = testBZZGetRequest(t, srv.URL, correctManifestAddrHex, "feed")
+	if statusCode != http.StatusOK {
 		t.Fatalf("err %s", resp.Status)
 	}
-	b, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(update1Data, b) {
+	if !bytes.Equal(update1Data, res) {
 		t.Fatalf("Expected body '%x', got '%x'", update1Data, b)
 	}
 
@@ -154,23 +115,18 @@ func TestBzzFeed(t *testing.T) {
 	t.Log("update 2")
 
 	// 1.- get metadata about this feed
-	testBzzResUrl = fmt.Sprintf("%s/bzz-feed:/%s/", srv.URL, correctManifestAddrHex)
-	resp, err = http.Get(testBzzResUrl + "?meta=1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	res, statusCode = testBZZGetRequest(t, srv.URL, correctManifestAddrHex, "feed", "meta=1")
+	if statusCode != http.StatusOK {
 		t.Fatalf("Get feed metadata returned %s", resp.Status)
 	}
-	b, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
+
 	updateRequest = &feed.Request{}
-	if err = updateRequest.UnmarshalJSON(b); err != nil {
+	if err = updateRequest.UnmarshalJSON(res); err != nil {
 		t.Fatalf("Error decoding feed metadata: %s", err)
 	}
+
+	//data for update 2
+	update2Data := []byte("foo")
 	updateRequest.SetData(update2Data)
 	if err = updateRequest.Sign(signer); err != nil {
 		t.Fatal(err)
@@ -224,53 +180,33 @@ func TestBzzFeed(t *testing.T) {
 
 	// get latest update through bzz-feed directly
 	t.Log("get update 1.2")
-	testBzzResUrl = fmt.Sprintf("%s/bzz-feed:/%s", srv.URL, correctManifestAddrHex)
-	resp, err = http.Get(testBzzResUrl)
-	if err != nil {
-		t.Fatal(err)
+	// 1.- get metadata about this feed
+	res, statusCode = testBZZGetRequest(t, srv.URL, correctManifestAddrHex, "feed")
+	if statusCode != http.StatusOK {
+		t.Fatalf("Get feed returned %v", statusCode)
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("err %s", resp.Status)
-	}
-	b, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(update2Data, b) {
-		t.Fatalf("Expected body '%x', got '%x'", update2Data, b)
+	if !bytes.Equal(update2Data, res) {
+		t.Fatalf("Expected body '%x', got '%x'", update2Data, res)
 	}
 
 	// test manifest-less queries
 	t.Log("get first update in update1Timestamp via direct query")
+
 	query := feed.NewQuery(&updateRequest.Feed, update1Timestamp, lookup.NoClue)
-
-	urlq, err := url.Parse(fmt.Sprintf("%s/bzz-feed:/", srv.URL))
-	if err != nil {
-		t.Fatal(err)
+	res, statusCode = testBZZGetRequest(t, srv.URL, "", "feed",
+		formQueryValue("time", strconv.FormatUint(query.TimeLimit, 10)),
+		formQueryValue("topic", query.Topic.Hex()),
+		formQueryValue("user", query.User.String()),
+	)
+	if statusCode != http.StatusOK {
+		t.Fatalf("Get feed returned %v", statusCode)
 	}
 
-	values := urlq.Query()
-	query.AppendValues(values) // this adds feed query parameters
-	urlq.RawQuery = values.Encode()
-	resp, err = http.Get(urlq.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("err %s", resp.Status)
-	}
-	b, err = ioutil.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(update1Data, b) {
-		t.Fatalf("Expected body '%x', got '%x'", update1Data, b)
+	if !bytes.Equal(update1Data, res) {
+		t.Fatalf("Expected body '%x', got '%x'", update1Data, res)
 	}
 
 }
-
 
 func newTestSigner() (*feed.GenericSigner, error) {
 	privKey, err := crypto.HexToECDSA("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef")
@@ -278,4 +214,20 @@ func newTestSigner() (*feed.GenericSigner, error) {
 		return nil, err
 	}
 	return feed.NewGenericSigner(privKey), nil
+}
+
+// params[0] - resourceHash
+// params[1] - additional base url (feed, raw, etc)
+// params[2..] - additional query parameters in form "key=value"
+func testBZZGetRequest(t *testing.T, url string, params...string) ([]byte, int)  {
+	res, respCode, err := GetRequestBZZ(url, params...)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return res, respCode
+}
+
+func formQueryValue(key, value string) string {
+	return fmt.Sprintf("%s=%s", key, value)
 }
