@@ -23,8 +23,13 @@ const (
 	STATE_PUBKEY_RECEIVE
 	STATE_SEND_DEALS
 	STATE_PROCESS_DEALS
-	STATE_PROCESS_SEND_RESPONSES
-	STATE_PROCESS_PROCESS_RESPONSES
+	STATE_SEND_RESPONSES
+	STATE_PROCESS_RESPONSES
+	STATE_SEND_JUSTIFICATIONS
+)
+const (
+	MESSAGE_DEAL = iota
+	MESSAGE_RESPONSE
 )
 
 var timeoutErr = errors.New("timeout")
@@ -32,6 +37,7 @@ var timeoutErr = errors.New("timeout")
 type DKGMessage struct {
 	From    int
 	ToIndex int
+	Type    int
 	Data    []byte
 }
 
@@ -46,6 +52,7 @@ type DKG interface {
 	// Phase I
 	SendDeals() error
 	ProcessDeals() error
+	SendResponses() error
 	ProcessResponses() error
 	ProcessJustifications() error
 
@@ -75,9 +82,10 @@ type DKGInstance struct {
 	State      int
 	KeyPair    *key.Pair
 
-	pubkeys  []kyber.Point
-	Index    int
-	dkgRabin *rabin.DistKeyGenerator
+	pubkeys   []kyber.Point
+	responses []*rabin.Response
+	Index     int
+	dkgRabin  *rabin.DistKeyGenerator
 }
 
 func (i *DKGInstance) SendPubkey() error {
@@ -133,6 +141,7 @@ func (i *DKGInstance) SendDeals() error {
 	if err != nil {
 		return fmt.Errorf("Dkg instance init error: %v", err)
 	}
+
 	deals, err := i.dkgRabin.Deals()
 	if err != nil {
 		return fmt.Errorf("deal generation error: %v", err)
@@ -146,6 +155,7 @@ func (i *DKGInstance) SendDeals() error {
 			Data:    b.Bytes(),
 			ToIndex: toIndex,
 			From:    i.Index,
+			Type:    MESSAGE_DEAL,
 		}
 		msgBin, err := json.Marshal(msg)
 		if err != nil {
@@ -159,7 +169,6 @@ func (i *DKGInstance) SendDeals() error {
 func (i *DKGInstance) ProcessDeals() error {
 	ch := i.Streamer.Read()
 	numOfDeals := i.NumOfNodes - 1
-	respList := make([]*rabin.Response, 0)
 
 	for {
 		select {
@@ -189,7 +198,7 @@ func (i *DKGInstance) ProcessDeals() error {
 			if err != nil {
 				return err
 			}
-			respList = append(respList, resp)
+			i.responses = append(i.responses, resp)
 			numOfDeals--
 
 		case <-time.After(TIMEOUT_FOR_STATE):
@@ -204,7 +213,77 @@ func (i *DKGInstance) ProcessDeals() error {
 
 	return nil
 }
+func (i *DKGInstance) SendResponses() error {
+	fmt.Println(i.Index, "sent", len(i.responses), "resp")
+	for j := range i.responses {
+		buf := bytes.NewBuffer(nil)
+		err := gob.NewEncoder(buf).Encode(i.responses[j])
+		if err != nil {
+			return err
+		}
+
+		msg := DKGMessage{
+			From: i.Index,
+			Type: MESSAGE_RESPONSE,
+			Data: buf.Bytes(),
+		}
+
+		b, err := json.Marshal(&msg)
+		if err != nil {
+			return err
+		}
+		i.Streamer.Broadcast(b)
+	}
+	i.responses = i.responses[:0]
+	return nil
+}
 func (i *DKGInstance) ProcessResponses() error {
+	ch := i.Streamer.Read()
+	numOfResponses := (i.NumOfNodes - 1) * (i.NumOfNodes - 1)
+	just := make([]*rabin.Justification, 0)
+	for {
+		select {
+		case resp := <-ch:
+			fmt.Println(i.Index, " ----- ", numOfResponses)
+			var msg DKGMessage
+			err := json.Unmarshal(resp, &msg)
+			if err != nil {
+				return err
+			}
+
+			if msg.Type != MESSAGE_RESPONSE {
+				continue
+			}
+			r := &rabin.Response{}
+
+			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
+			err = dec.Decode(r)
+			if err != nil {
+				return err
+			}
+			fmt.Println(i.Index, "r.Response.Index", r.Response.Index)
+			if uint32(i.Index) == r.Response.Index {
+				continue
+			}
+			j, err := i.dkgRabin.ProcessResponse(r)
+			if err != nil {
+				return err
+			}
+
+			just = append(just, j)
+			numOfResponses--
+
+		case <-time.After(TIMEOUT_FOR_STATE):
+			i.pubkeys = i.pubkeys[:0]
+			return timeoutErr
+
+		}
+		if numOfResponses == 0 {
+			break
+		}
+	}
+	fmt.Println(i.Index, "ln just", len(just))
+
 	return nil
 }
 func (i *DKGInstance) ProcessJustifications() error {
@@ -257,7 +336,24 @@ func (i *DKGInstance) Run() error {
 				i.moveToState(STATE_PUBKEY_SEND)
 				panic(err)
 			}
-			i.moveToState(STATE_PROCESS_SEND_RESPONSES)
+			i.moveToState(STATE_SEND_RESPONSES)
+		case STATE_SEND_RESPONSES:
+			err := i.SendResponses()
+			if err != nil {
+				//todo errcheck
+				i.moveToState(STATE_PUBKEY_SEND)
+				panic(err)
+			}
+			i.moveToState(STATE_PROCESS_RESPONSES)
+
+		case STATE_PROCESS_RESPONSES:
+			err := i.ProcessResponses()
+			if err != nil {
+				//todo errcheck
+				i.moveToState(STATE_PUBKEY_SEND)
+				panic(err)
+			}
+			i.moveToState(STATE_SEND_JUSTIFICATIONS)
 
 		default:
 			fmt.Println("default Exit")
@@ -269,4 +365,5 @@ func (i *DKGInstance) Run() error {
 func (i *DKGInstance) moveToState(state int) {
 	fmt.Println("Move form", i.State, "to", state)
 	i.State = state
+	time.Sleep(time.Second)
 }
