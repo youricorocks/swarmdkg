@@ -25,11 +25,15 @@ const (
 	STATE_PROCESS_DEALS
 	STATE_SEND_RESPONSES
 	STATE_PROCESS_RESPONSES
-	STATE_SEND_JUSTIFICATIONS
+	STATE_PROCESS_JUSTIFICATIONS
+	STATE_PROCESS_Commits
+	STATE_PROCESS_Complaints
+	STATE_PROCESS_ReconstructCommits
 )
 const (
 	MESSAGE_DEAL = iota
 	MESSAGE_RESPONSE
+	MESSAGE_JUSTIFICATION
 )
 
 var timeoutErr = errors.New("timeout")
@@ -245,7 +249,6 @@ func (i *DKGInstance) ProcessResponses() error {
 	for {
 		select {
 		case resp := <-ch:
-			fmt.Println(i.Index, " ----- ", numOfResponses)
 			var msg DKGMessage
 			err := json.Unmarshal(resp, &msg)
 			if err != nil {
@@ -262,7 +265,7 @@ func (i *DKGInstance) ProcessResponses() error {
 			if err != nil {
 				return err
 			}
-			fmt.Println(i.Index, "r.Response.Index", r.Response.Index)
+
 			if uint32(i.Index) == r.Response.Index {
 				continue
 			}
@@ -284,10 +287,80 @@ func (i *DKGInstance) ProcessResponses() error {
 		}
 	}
 	fmt.Println(i.Index, "ln just", len(just))
+	for j := range just {
+		var data []byte
+		if just[j] != nil {
+			buf := bytes.NewBuffer(nil)
+			err := gob.NewEncoder(buf).Encode(just[j])
+			if err != nil {
+				return err
+			}
+			data = buf.Bytes()
+		}
+
+		msg := DKGMessage{
+			From: i.Index,
+			Type: MESSAGE_JUSTIFICATION,
+			Data: data,
+		}
+
+		b, err := json.Marshal(&msg)
+		if err != nil {
+			return err
+		}
+		i.Streamer.Broadcast(b)
+	}
+	fmt.Println(i.Index, "just sent", len(just))
 
 	return nil
 }
 func (i *DKGInstance) ProcessJustifications() error {
+	ch := i.Streamer.Read()
+	numOfJustifications := (i.NumOfNodes - 1) * (i.NumOfNodes - 1) * i.NumOfNodes
+
+	for {
+		if numOfJustifications == 0 {
+			break
+		}
+
+		select {
+		case resp := <-ch:
+			var msg DKGMessage
+			fmt.Println(i.Index, "jst", string(resp))
+			err := json.Unmarshal(resp, &msg)
+			if err != nil {
+				return err
+			}
+
+			if msg.Type != MESSAGE_JUSTIFICATION {
+				continue
+			}
+			if len(msg.Data) == 0 {
+
+				numOfJustifications--
+				fmt.Println(i.Index, "numOfJustifications", numOfJustifications)
+				continue
+			}
+			r := &rabin.Justification{}
+
+			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
+			err = dec.Decode(r)
+			if err != nil {
+				return err
+			}
+			err = i.dkgRabin.ProcessJustification(r)
+			if err != nil {
+				return err
+			}
+			numOfJustifications--
+
+		case <-time.After(TIMEOUT_FOR_STATE):
+			i.pubkeys = i.pubkeys[:0]
+			return timeoutErr
+
+		}
+	}
+
 	return nil
 }
 
@@ -354,7 +427,15 @@ func (i *DKGInstance) Run() error {
 				i.moveToState(STATE_PUBKEY_SEND)
 				panic(err)
 			}
-			i.moveToState(STATE_SEND_JUSTIFICATIONS)
+			i.moveToState(STATE_PROCESS_JUSTIFICATIONS)
+		case STATE_PROCESS_JUSTIFICATIONS:
+			err := i.ProcessJustifications()
+			if err != nil {
+				//todo errcheck
+				i.moveToState(STATE_PUBKEY_SEND)
+				panic(err)
+			}
+			i.moveToState(STATE_PROCESS_Commits)
 
 		default:
 			fmt.Println("default Exit")
