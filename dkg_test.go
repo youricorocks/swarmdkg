@@ -76,23 +76,6 @@ func TestBzzMyFeed(t *testing.T) {
 	if !bytes.Equal(update2Data, res) {
 		t.Fatalf("Expected body '%x', got '%x'", update2Data, res)
 	}
-	/*
-		// test manifest-less queries
-		t.Log("get first update in update1Timestamp via direct query")
-
-		res, statusCode = testBZZGetRequest(t, srv.URL, "", "feed",
-			formQueryValue("time", strconv.FormatUint(update1Timestamp, 10)),
-			formQueryValue("topic", topic.Hex()),
-			formQueryValue("user", signer.Address().String()),
-		)
-		if statusCode != http.StatusOK {
-			t.Fatalf("Get feed returned %v", statusCode)
-		}
-
-		if !bytes.Equal(update1Data, res) {
-			t.Fatalf("Expected body '%x', got '%x'", update1Data, res)
-		}
-	*/
 }
 
 func newTestSigner() (*feed.GenericSigner, error) {
