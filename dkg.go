@@ -9,6 +9,8 @@ import (
 	rabin "go.dedis.ch/kyber/share/dkg/rabin"
 	"go.dedis.ch/kyber/share/vss/rabin"
 
+	"bytes"
+	"encoding/gob"
 	"go.dedis.ch/kyber/util/key"
 	"sort"
 	"time"
@@ -136,21 +138,17 @@ func (i *DKGInstance) SendDeals() error {
 		return fmt.Errorf("deal generation error: %v", err)
 	}
 
-	fmt.Println(i.Index, "ln deals", len(deals))
 	for toIndex, deal := range deals {
-		b, err := json.Marshal(deal)
-		if err != nil {
-			fmt.Println("marshall err1", err)
-			return err
-		}
+		b := bytes.NewBuffer(nil)
+		err = gob.NewEncoder(b).Encode(deal)
+
 		msg := DKGMessage{
-			Data:    b,
+			Data:    b.Bytes(),
 			ToIndex: toIndex,
 			From:    i.Index,
 		}
 		msgBin, err := json.Marshal(msg)
 		if err != nil {
-			fmt.Println("marshall err2", err)
 			return err
 		}
 
@@ -167,30 +165,29 @@ func (i *DKGInstance) ProcessDeals() error {
 		select {
 		case deal := <-ch:
 			var msg DKGMessage
-			fmt.Println(i.Index, "deal - ", string(deal))
 			err := json.Unmarshal(deal, &msg)
 			if err != nil {
-				fmt.Println("deal unmarshall err1", err)
 				return err
 			}
 			if msg.ToIndex != i.Index {
 				continue
 			}
+
 			dd := &rabin.Deal{
 				Deal: &vss.EncryptedDeal{
 					DHKey: i.Suite.Point(),
 				},
 			}
-			err = json.Unmarshal(msg.Data, &dd)
+
+			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
+			err = dec.Decode(dd)
 			if err != nil {
-				fmt.Println("deal unmarshall err2", err)
 				return err
 			}
-			fmt.Println(i.Index, "proc")
+
 			resp, err := i.dkgRabin.ProcessDeal(dd)
 			if err != nil {
-				fmt.Println(i.Index, "deal ProcessDeal err3", err, string(deal))
-				//return err
+				return err
 			}
 			respList = append(respList, resp)
 			numOfDeals--
