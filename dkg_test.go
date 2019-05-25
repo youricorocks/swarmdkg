@@ -139,32 +139,7 @@ func TestBzzFeed(t *testing.T) {
 	body = updateRequest.AppendValues(urlQuery) // this adds all query parameters
 	goodQueryParameters := urlQuery.Encode()    // save the query parameters for a second attempt
 
-	// create bad query parameters in which the signature is missing
-	urlQuery.Del("signature")
-	testUrl.RawQuery = urlQuery.Encode()
-
-	// 1st attempt with bad query parameters in which the signature is missing
-	resp, err = http.Post(testUrl.String(), "application/octet-stream", bytes.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("Update returned %s. Expected %d", resp.Status, http.StatusBadRequest)
-	}
-
-	// 2nd attempt with bad query parameters in which the signature is of incorrect length
-	urlQuery.Set("signature", "0xabcd") // should be 130 hex chars
-	resp, err = http.Post(testUrl.String(), "application/octet-stream", bytes.NewReader(body))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusBadRequest {
-		t.Fatalf("Update returned %s. Expected %d", resp.Status, http.StatusBadRequest)
-	}
-
-	// 3rd attempt, with good query parameters:
+	// update data with good query parameters:
 	testUrl.RawQuery = goodQueryParameters
 	resp, err = http.Post(testUrl.String(), "application/octet-stream", bytes.NewReader(body))
 	if err != nil {
