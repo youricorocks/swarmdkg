@@ -1,6 +1,7 @@
 package swarmdkg
 
 import (
+	"encoding/hex"
 	"fmt"
 	"github.com/JekaMas/awg"
 	"github.com/ethereum/go-ethereum/common"
@@ -57,6 +58,7 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 						fmt.Println("=== 33333", err, msg)
 						s.Lock()
 						defer s.Unlock()
+
 						_, ok := s.cache[feed.Topic]
 						if !ok {
 							fmt.Println("=== 33333.1", err, msg)
@@ -69,7 +71,7 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 								s.cache[feed.Topic][feed.User] = make(map[string]struct{})
 							} else {
 								fmt.Println("=== 33333.4", err, msg)
-								_, cached := s.cache[feed.Topic][feed.User][string(msg)]
+								_, cached := s.cache[feed.Topic][feed.User][hex.EncodeToString(msg)]
 								if cached {
 									fmt.Println("=== 33333.5", err, msg)
 									return nil
@@ -77,7 +79,7 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 							}
 						}
 
-						s.cache[feed.Topic][feed.User][string(msg)] = struct{}{}
+						s.cache[feed.Topic][feed.User][hex.EncodeToString(msg)] = struct{}{}
 						fmt.Println("=== 33333.XXX", err, len(msg), len(s.Messages))
 						s.Messages <- msg
 					}
