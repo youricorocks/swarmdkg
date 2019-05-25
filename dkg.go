@@ -106,9 +106,9 @@ func (i *DKGInstance) ReceivePubkeys() error {
 	ch := i.Streamer.Read()
 	for {
 		select {
-		case key := <-ch:
+		case k := <-ch:
 			point := i.Suite.Point()
-			err := point.UnmarshalBinary(key)
+			err := point.UnmarshalBinary(k)
 			if err != nil {
 				i.pubkeys = i.pubkeys[:0]
 				return err
@@ -204,8 +204,6 @@ func (i *DKGInstance) ProcessDeals() error {
 			}
 			i.responses = append(i.responses, resp)
 			numOfDeals--
-			fmt.Println("+++", i.Index, numOfDeals)
-
 		case <-time.After(TIMEOUT_FOR_STATE):
 			i.pubkeys = i.pubkeys[:0]
 			return timeoutErr
@@ -219,7 +217,6 @@ func (i *DKGInstance) ProcessDeals() error {
 	return nil
 }
 func (i *DKGInstance) SendResponses() error {
-	fmt.Println(i.Index, "sent", len(i.responses), "resp")
 	for j := range i.responses {
 		buf := bytes.NewBuffer(nil)
 		err := gob.NewEncoder(buf).Encode(i.responses[j])
@@ -246,6 +243,7 @@ func (i *DKGInstance) ProcessResponses() error {
 	ch := i.Streamer.Read()
 	numOfResponses := (i.NumOfNodes - 1) * (i.NumOfNodes - 1)
 	just := make([]*rabin.Justification, 0)
+
 	for {
 		select {
 		case resp := <-ch:
@@ -286,7 +284,6 @@ func (i *DKGInstance) ProcessResponses() error {
 			break
 		}
 	}
-	fmt.Println(i.Index, "ln just", len(just))
 	for j := range just {
 		var data []byte
 		if just[j] != nil {
@@ -310,8 +307,6 @@ func (i *DKGInstance) ProcessResponses() error {
 		}
 		i.Streamer.Broadcast(b)
 	}
-	fmt.Println(i.Index, "just sent", len(just))
-
 	return nil
 }
 func (i *DKGInstance) ProcessJustifications() error {
@@ -326,7 +321,7 @@ func (i *DKGInstance) ProcessJustifications() error {
 		select {
 		case resp := <-ch:
 			var msg DKGMessage
-			fmt.Println(i.Index, "jst", string(resp))
+
 			err := json.Unmarshal(resp, &msg)
 			if err != nil {
 				return err
@@ -335,14 +330,13 @@ func (i *DKGInstance) ProcessJustifications() error {
 			if msg.Type != MESSAGE_JUSTIFICATION {
 				continue
 			}
-			if len(msg.Data) == 0 {
 
+			if len(msg.Data) == 0 {
 				numOfJustifications--
-				fmt.Println(i.Index, "numOfJustifications", numOfJustifications)
 				continue
 			}
-			r := &rabin.Justification{}
 
+			r := &rabin.Justification{}
 			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
 			err = dec.Decode(r)
 			if err != nil {
@@ -357,7 +351,6 @@ func (i *DKGInstance) ProcessJustifications() error {
 		case <-time.After(TIMEOUT_FOR_STATE):
 			i.pubkeys = i.pubkeys[:0]
 			return timeoutErr
-
 		}
 	}
 
