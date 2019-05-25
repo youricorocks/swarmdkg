@@ -98,10 +98,13 @@ func TestBzzStream(t *testing.T) {
 	srv := http.NewTestSwarmServer(t, func(i *api.API) http.TestServer {
 		return http.NewServer(i, "")
 	}, nil)
-	defer srv.Close()
+	defer func() {
+		fmt.Println("*** Server is closed ***")
+		srv.Close()
+	}()
 
 	const numUsers = 5
-	var feeds []*MyFeed
+	var myFeeds []*MyFeed
 	var updateData [][]byte
 
 	// data of update 1
@@ -110,22 +113,22 @@ func TestBzzStream(t *testing.T) {
 
 	for i := 0; i < numUsers; i++ {
 		signer, _ := newTestSigner()
-		feeds = append(feeds, NewMyFeed("foo.eth", signer, srv.URL))
+		myFeeds = append(myFeeds, NewMyFeed("foo.eth", signer, srv.URL))
 		updateData = append(updateData, testutil.RandomBytes(i, 20+i))
 	}
 
 	var streams []*Stream
-	for i := range feeds {
+	for i := range myFeeds {
 		var streamFeeds []*Feed
 		for j := 0; j < numUsers; j++ {
 			if j == i {
 				continue
 			}
-			f := feeds[j]
+			f := myFeeds[j]
 			streamFeeds = append(streamFeeds, NewFeed(f.Topic, f.User, f.URL))
 		}
 
-		streams = append(streams, NewStream(feeds[i], streamFeeds))
+		streams = append(streams, NewStream(myFeeds[i], streamFeeds))
 	}
 
 	// creates feed and sets update 1
@@ -142,8 +145,6 @@ func TestBzzStream(t *testing.T) {
 
 		fmt.Println("=== 111111111111")
 		go func(i int) {
-			defer wg.Done()
-
 			count := 0
 			select {
 			case msg := <-streams[i].Read():
@@ -155,17 +156,23 @@ func TestBzzStream(t *testing.T) {
 					}
 				}
 				if !isWaited {
+					wg.Done()
 					t.Fatal("stream got unexpected value", i, msg, updateData)
+					return
 				}
+
 				count++
 				if count == len(updateData) {
 					// successful case
 					fmt.Println("successful case")
+					wg.Done()
 					return
 				}
+
 				fmt.Println("still waiting for all messages", i, count)
-			case <-time.After(10 * time.Second):
+			case <-time.After(5 * time.Second):
 				fmt.Println("stream timeouted with", i, count)
+				wg.Done()
 				t.Fatal("stream timeouted with", i, count)
 				return
 			}
@@ -173,6 +180,7 @@ func TestBzzStream(t *testing.T) {
 
 	}
 	wg.Wait()
+	fmt.Println("done")
 }
 
 func TestBzzStream1(t *testing.T) {
