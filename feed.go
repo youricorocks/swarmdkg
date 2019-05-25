@@ -8,17 +8,17 @@ import (
 	"net/http"
 )
 
-type Feed struct{
+type Feed struct {
 	Topic string
-	User common.Address
-	URL string
+	User  common.Address
+	URL   string
 }
 
 func NewFeed(topic string, user common.Address, url string) *Feed {
 	return &Feed{
-		Topic:topic,
-		User: user,
-		URL: url,
+		Topic: topic,
+		User:  user,
+		URL:   url,
 	}
 }
 

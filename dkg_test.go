@@ -29,7 +29,6 @@ func TestBzzMyFeed(t *testing.T) {
 	// creates feed and sets update 1
 	err := myFeed.Broadcast(update1Data)
 
-
 	correctManifestAddrHex := "bb056a5264c295c2b0f613c8409b9c87ce9d71576ace02458160df4cc894210b"
 	if myFeed.ManifestHash() != correctManifestAddrHex {
 		t.Fatalf("Response feed manifest mismatch, expected '%s', got '%s'", correctManifestAddrHex, myFeed.ManifestHash())
@@ -60,7 +59,6 @@ func TestBzzMyFeed(t *testing.T) {
 	// Move the clock ahead 1 second
 	srv.CurrentTime++
 	t.Log("update 2")
-
 
 	update2Data := []byte("foo")
 	err = myFeed.Broadcast(update2Data)
@@ -108,7 +106,7 @@ func newTestSigner() (*feed.GenericSigner, error) {
 // params[0] - resourceHash
 // params[1] - additional base url (feed, raw, etc)
 // params[2..] - additional query parameters in form "key=value"
-func testBZZGetRequest(t *testing.T, url string, params...string) ([]byte, int)  {
+func testBZZGetRequest(t *testing.T, url string, params ...string) ([]byte, int) {
 	t.Helper()
 
 	res, respCode, err := GetRequestBZZ(url, params...)

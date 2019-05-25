@@ -3,25 +3,25 @@ package swarmdkg
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/swarm/storage"
 	"github.com/ethereum/go-ethereum/swarm/storage/feed"
-	"errors"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 )
 
-type MyFeed struct{
+type MyFeed struct {
 	*Feed
 	feed.Signer
-	counter int
+	counter      int
 	manifestHash string
 }
 
 func NewMyFeed(topic string, signer feed.Signer, url string) *MyFeed {
 	return &MyFeed{
-		Feed: NewFeed(topic, signer.Address(), url),
+		Feed:   NewFeed(topic, signer.Address(), url),
 		Signer: signer,
 	}
 }
