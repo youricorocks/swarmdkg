@@ -3,12 +3,13 @@ package swarmdkg
 import "time"
 
 type Stream struct {
-	Own MyFeed
+	Own   MyFeed
 	Feeds []Feed
+	Messages  chan []byte
 }
 
 func NewStream(own MyFeed, feeds []Feed) Stream {
-	return Stream{own, feeds}
+	return Stream{own, feeds, make(chan []byte, 1024)}
 }
 
 func (s Stream) Broadcast(msg []byte) {
@@ -16,10 +17,23 @@ func (s Stream) Broadcast(msg []byte) {
 }
 
 func (s Stream) Read() chan []byte {
-	time.NewTicker(time.Second)
-	s.Own.Read()
+	go func() {
+		timer := time.NewTicker(time.Second)
+		defer timer.Stop()
 
-	for _, feed := range s.Feeds {
-		feed.Read()
-	}
+		for range timer.C {
+			msg := s.Own.Read()
+			if len(msg) != 0 {
+				s.Messages <- msg
+			}
+
+			for _, feed := range s.Feeds {
+				if msg = feed.Read(); len(msg) != 0 {
+					s.Messages <- msg
+				}
+			}
+		}
+	}()
+
+	return s.Messages
 }
