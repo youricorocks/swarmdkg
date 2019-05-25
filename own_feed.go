@@ -10,6 +10,7 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"sync"
 )
 
 type MyFeed struct {
@@ -17,6 +18,7 @@ type MyFeed struct {
 	feed.Signer
 	counter      int
 	manifestHash string
+	sync.RWMutex
 }
 
 func NewMyFeed(topic string, signer feed.Signer, url string) *MyFeed {
@@ -27,6 +29,9 @@ func NewMyFeed(topic string, signer feed.Signer, url string) *MyFeed {
 }
 
 func (own *MyFeed) Read() ([]byte, error) {
+	own.RLock()
+	defer own.RUnlock()
+
 	if len(own.manifestHash) == 0 {
 		return nil, errors.New("own.manifestHash should be initialised")
 	}
@@ -34,17 +39,22 @@ func (own *MyFeed) Read() ([]byte, error) {
 }
 
 func (own *MyFeed) Broadcast(msg []byte) error {
+	own.Lock()
 	if own.counter == 0 {
 		manifestHash, err := own.firstUpdate(msg)
 		if err != nil {
+			own.Unlock()
 			return err
 		}
 
 		own.manifestHash = manifestHash.Hex()
 		own.counter++
-		fmt.Println("broadcast", own.User.String(), own.counter, own.manifestHash)
+		fmt.Println("broadcast first", own.User.String(), own.counter, own.manifestHash)
+
+		own.Unlock()
 		return nil
 	}
+	own.Unlock()
 
 	res, statusCode, err := GetRequestBZZ(own.Feed.URL, own.manifestHash, "feed", "meta=1")
 	if err != nil {
@@ -75,6 +85,7 @@ func (own *MyFeed) Broadcast(msg []byte) error {
 	// update data with good query parameters:
 	testUrl.RawQuery = urlQuery.Encode()
 
+	fmt.Println("=== post", testUrl.String())
 	resp, err := http.Post(testUrl.String(), "application/octet-stream", bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -85,7 +96,10 @@ func (own *MyFeed) Broadcast(msg []byte) error {
 		return fmt.Errorf("post feed returned %v", statusCode)
 	}
 
+	own.Lock()
 	own.counter++
+	fmt.Println("broadcast", own.counter, own.User.String(), own.Topic, own.manifestHash)
+	own.Unlock()
 	return nil
 }
 
@@ -113,6 +127,7 @@ func (own *MyFeed) firstUpdate(msg []byte) (*storage.Address, error) {
 	urlQuery.Set("manifest", "1")                // indicate we want a manifest back
 	testUrl.RawQuery = urlQuery.Encode()
 
+	fmt.Println("=== post first", testUrl.String())
 	resp, err := http.Post(testUrl.String(), "application/octet-stream", bytes.NewReader(body))
 	if err != nil {
 		return nil, err

@@ -200,6 +200,7 @@ func (i *DKGInstance) ProcessDeals() error {
 			}
 			i.responses = append(i.responses, resp)
 			numOfDeals--
+			fmt.Println("+++", i.Index, numOfDeals)
 
 		case <-time.After(TIMEOUT_FOR_STATE):
 			i.pubkeys = i.pubkeys[:0]
