@@ -55,32 +55,25 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 					}
 
 					if len(msg) != 0 {
-						fmt.Println("=== 33333", err, msg)
 						s.Lock()
 						defer s.Unlock()
 
 						_, ok := s.cache[feed.Topic]
 						if !ok {
-							fmt.Println("=== 33333.1", err, msg)
 							s.cache[feed.Topic] = make(map[common.Address]map[string]struct{})
 						} else {
-							fmt.Println("=== 33333.2", err, msg)
 							_, ok = s.cache[feed.Topic][feed.User]
 							if !ok {
-								fmt.Println("=== 33333.3", err, msg)
 								s.cache[feed.Topic][feed.User] = make(map[string]struct{})
 							} else {
-								fmt.Println("=== 33333.4", err, msg)
 								_, cached := s.cache[feed.Topic][feed.User][hex.EncodeToString(msg)]
 								if cached {
-									fmt.Println("=== 33333.5", err, msg)
 									return nil
 								}
 							}
 						}
 
 						s.cache[feed.Topic][feed.User][hex.EncodeToString(msg)] = struct{}{}
-						fmt.Println("=== 33333.XXX", err, len(msg), len(s.Messages))
 						s.Messages <- msg
 					}
 					return nil

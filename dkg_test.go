@@ -143,38 +143,34 @@ func TestBzzStream(t *testing.T) {
 	for i := range streams {
 		wg.Add(1)
 
-		fmt.Println("=== 111111111111")
 		go func(i int) {
 			count := 0
-			select {
-			case msg := <-streams[i].Read():
-				fmt.Println("=== 222222222222")
-				isWaited := false
-				for _, data := range updateData {
-					if bytes.Equal(msg, data) {
-						isWaited = true
+			defer wg.Done()
+
+			for {
+				select {
+				case msg := <-streams[i].Read():
+					isWaited := false
+					for _, data := range updateData {
+						if bytes.Equal(msg, data) {
+							isWaited = true
+						}
 					}
-				}
-				if !isWaited {
-					wg.Done()
-					t.Fatal("stream got unexpected value", i, msg, updateData)
+					if !isWaited {
+						t.Fatal("stream got unexpected value", i, msg, updateData)
+						return
+					}
+
+					count++
+					if count == len(updateData) {
+						// successful case
+						fmt.Println("successful case")
+						return
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatal("stream timeouted with", i, count)
 					return
 				}
-
-				count++
-				if count == len(updateData) {
-					// successful case
-					fmt.Println("successful case")
-					wg.Done()
-					return
-				}
-
-				fmt.Println("still waiting for all messages", i, count)
-			case <-time.After(5 * time.Second):
-				fmt.Println("stream timeouted with", i, count)
-				wg.Done()
-				t.Fatal("stream timeouted with", i, count)
-				return
 			}
 		}(i)
 
