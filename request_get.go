@@ -33,7 +33,7 @@ func GetRequestBZZ(url string, params ...string) ([]byte, int, error) {
 
 	resp, err := http.Get(testBzzUrl)
 	if err != nil {
-		return nil, resp.StatusCode, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 

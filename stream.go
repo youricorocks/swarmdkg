@@ -32,8 +32,7 @@ func (s Stream) Read() chan []byte {
 			msg, err := s.Own.Read()
 			if err != nil {
 				fmt.Println("Error while reading own feed", err)
-			}
-			if len(msg) != 0 {
+			} else if len(msg) != 0 {
 				s.Messages <- msg
 			}
 
@@ -42,8 +41,7 @@ func (s Stream) Read() chan []byte {
 				msg, err = feed.Get(now)
 				if err != nil {
 					fmt.Println("Error while reading own feed", err)
-				}
-				if len(msg) != 0 {
+				} else if len(msg) != 0 {
 					s.Messages <- msg
 				}
 			}
