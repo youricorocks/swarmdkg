@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/swarm/storage"
 	"github.com/ethereum/go-ethereum/swarm/storage/feed"
 	"github.com/ethereum/go-ethereum/swarm/testutil"
+	"go.dedis.ch/kyber/pairing/bn256"
 	"io/ioutil"
 	"net/http"
 	"net/url"
@@ -188,7 +189,7 @@ func newTestSigner() (*feed.GenericSigner, error) {
 // params[0] - resourceHash
 // params[1] - additional base url (feed, raw, etc)
 // params[2..] - additional query parameters in form "key=value"
-func testBZZGetRequest(t *testing.T, url string, params...string) ([]byte, int)  {
+func testBZZGetRequest(t *testing.T, url string, params ...string) ([]byte, int) {
 	t.Helper()
 
 	res, respCode, err := GetRequestBZZ(url, params...)
@@ -201,4 +202,14 @@ func testBZZGetRequest(t *testing.T, url string, params...string) ([]byte, int) 
 
 func formQueryValue(key, value string) string {
 	return fmt.Sprintf("%s=%s", key, value)
+}
+
+func TestMockDKG(t *testing.T) {
+	numOfDKGNodes := 4
+	threshold := 3
+	dkg := NewDkg(nil, bn256.NewSuiteG2(), numOfDKGNodes, threshold)
+	err := dkg.Run()
+	if err != nil {
+		t.Fatal(err)
+	}
 }

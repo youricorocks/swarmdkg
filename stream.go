@@ -3,9 +3,9 @@ package swarmdkg
 import "time"
 
 type Stream struct {
-	Own   MyFeed
-	Feeds []Feed
-	Messages  chan []byte
+	Own      MyFeed
+	Feeds    []Feed
+	Messages chan []byte
 }
 
 func NewStream(own MyFeed, feeds []Feed) Stream {

@@ -9,10 +9,10 @@ import (
 // params[0] - resourceHash
 // params[1] - additional base url (feed, raw, etc)
 // params[2..] - additional query parameters in form "key=value"
-func GetRequestBZZ(url string, params...string) ([]byte, int, error)  {
+func GetRequestBZZ(url string, params ...string) ([]byte, int, error) {
 	urlBase := "bzz"
 	if len(params) > 1 {
-		urlBase = urlBase+"-"+params[1]
+		urlBase = urlBase + "-" + params[1]
 	}
 
 	testBzzUrl := fmt.Sprintf("%s/%s:", url, urlBase)

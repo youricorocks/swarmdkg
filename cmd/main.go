@@ -2,6 +2,6 @@ package cmd
 
 import "fmt"
 
-func main()  {
+func main() {
 	fmt.Println("Hello dkg")
 }

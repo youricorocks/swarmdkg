@@ -2,7 +2,7 @@ package swarmdkg
 
 import "github.com/ethereum/go-ethereum/swarm/storage/feed"
 
-type MyFeed struct{
+type MyFeed struct {
 	Feed
 	feed.Signer
 }
