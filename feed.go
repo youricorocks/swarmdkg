@@ -26,11 +26,11 @@ func NewFeed(topic string, user common.Address, url string) *Feed {
 
 func (f *Feed) Read(manifestAddrHex string) ([]byte, error) {
 	res, statusCode, err := GetRequestBZZ(f.URL, manifestAddrHex, "feed")
-	if statusCode != http.StatusOK {
-		return nil, fmt.Errorf("err %v", statusCode)
-	}
 	if err != nil {
 		return nil, err
+	}
+	if statusCode != http.StatusOK {
+		return nil, fmt.Errorf("err %v", statusCode)
 	}
 
 	return res, nil
@@ -38,7 +38,9 @@ func (f *Feed) Read(manifestAddrHex string) ([]byte, error) {
 
 func (f *Feed) GetManifest(manifestHash string) (*api.Manifest, error) {
 	res, statusCode, err := GetRequestBZZ(f.URL, manifestHash, "raw")
-
+	if err != nil {
+		return nil, err
+	}
 	if statusCode != http.StatusOK {
 		return nil, fmt.Errorf("err %v", statusCode)
 	}

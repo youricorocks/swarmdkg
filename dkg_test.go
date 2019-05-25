@@ -5,19 +5,20 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/swarm/api"
-	sr "github.com/ethereum/go-ethereum/swarm/api/http"
+	"github.com/ethereum/go-ethereum/swarm/api/http"
 	"github.com/ethereum/go-ethereum/swarm/storage/feed"
 	"github.com/ethereum/go-ethereum/swarm/testutil"
 	"go.dedis.ch/kyber/pairing/bn256"
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // Test Swarm feeds using the raw update methods
 func TestBzzMyFeed(t *testing.T) {
-	srv := sr.NewTestSwarmServer(t, func(i *api.API) sr.TestServer {
-		return sr.NewServer(i, "")
+	srv := http.NewTestSwarmServer(t, func(i *api.API) http.TestServer {
+		return http.NewServer(i, "")
 	}, nil)
 
 	// data of update 1
@@ -94,81 +95,78 @@ func TestBzzMyFeed(t *testing.T) {
 }
 
 func TestBzzStream(t *testing.T) {
-	srv := sr.NewTestSwarmServer(t, func(i *api.API) sr.TestServer {
-		return sr.NewServer(i, "")
+	srv := http.NewTestSwarmServer(t, func(i *api.API) http.TestServer {
+		return http.NewServer(i, "")
 	}, nil)
-
-	// data of update 1
-	update1Data := testutil.RandomBytes(1, 666)
-	update1Timestamp := srv.CurrentTime
-	signer, _ := newTestSigner()
-
-	myFeed := NewMyFeed("foo.eth", signer, srv.URL)
-
 	defer srv.Close()
 
+	const numUsers = 5
+	var feeds []*MyFeed
+	var updateData [][]byte
+
+	// data of update 1
+	update1Timestamp := srv.CurrentTime
+	_ = update1Timestamp
+
+	for i := 0; i < numUsers; i++ {
+		signer, _ := newTestSigner()
+		feeds = append(feeds, NewMyFeed("foo.eth", signer, srv.URL))
+		updateData = append(updateData, testutil.RandomBytes(1, 666))
+	}
+
+	var streams []Stream
+	for i := range feeds {
+		var streamFeeds []*Feed
+		for j := 0; j < numUsers; j++ {
+			if j == i {
+				continue
+			}
+			f := feeds[j]
+			streamFeeds = append(streamFeeds, NewFeed(f.Topic, f.User, f.URL))
+		}
+
+		streams = append(streams, NewStream(feeds[i], streamFeeds))
+	}
+
+
 	// creates feed and sets update 1
-	err := myFeed.Broadcast(update1Data)
-
-	correctManifestAddrHex := "bb056a5264c295c2b0f613c8409b9c87ce9d71576ace02458160df4cc894210b"
-	if myFeed.ManifestHash() != correctManifestAddrHex {
-		t.Fatalf("Response feed manifest mismatch, expected '%s', got '%s'", correctManifestAddrHex, myFeed.ManifestHash())
+	for i, stream := range streams {
+		stream.Broadcast(updateData[i])
 	}
 
-	// get the manifest
-	manifest, err := myFeed.GetManifest(myFeed.ManifestHash())
-	if err != nil {
-		t.Fatal(err)
-	}
-	correctFeedHex := "0x666f6f2e65746800000000000000000000000000000000000000000000000000c96aaa54e2d44c299564da76e1cd3184a2386b8d"
-	if manifest.Entries[0].Feed.Hex() != correctFeedHex {
-		t.Fatalf("Expected manifest Feed '%s', got '%s'", correctFeedHex, manifest.Entries[0].Feed.Hex())
-	}
+	wg := sync.WaitGroup{}
+	for i, stream := range streams {
+		wg.Add(1)
 
-	// get latest update through bzz-feed directly
-	t.Log("get update latest = 1.1", "addr", correctManifestAddrHex)
+		go func(i int) {
+			msgCh := stream.Read()
+			defer wg.Done()
 
-	res, err := myFeed.Read()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(update1Data, res) {
-		t.Fatalf("Expected body '%x', got '%x'", update1Data, res)
-	}
+			count := 0
+			select {
+			case msg := <-msgCh:
+				isWaited := false
+				for _, data := range updateData {
+					if bytes.Equal(msg, data) {
+						isWaited = true
+					}
+				}
+				if !isWaited {
+					t.Fatal("stream got unexpected value", i, msg, updateData)
+				}
+				count++
+				if count == len(updateData) {
+					// successful case
+					return
+				}
+			case <-time.After(1 * time.Second):
+				t.Fatal("stream timeouted with", i, count)
+				return
+			}
+		}(i)
 
-	// update 2
-	// Move the clock ahead 1 second
-	srv.CurrentTime++
-	t.Log("update 2")
-
-	update2Data := []byte("foo")
-	err = myFeed.Broadcast(update2Data)
-	if err != nil {
-		t.Fatal(err)
 	}
-
-	// get latest update through bzz-feed directly
-	t.Log("get update 1.2")
-	// 1.- get metadata about this feed
-	res, err = myFeed.Read()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(update2Data, res) {
-		t.Fatalf("Expected body '%x', got '%x'", update2Data, res)
-	}
-
-	// test manifest-less queries
-	t.Log("get first update in update1Timestamp via direct query")
-	foreignFeed := NewFeed("foo.eth", signer.Address(), srv.URL)
-	res, err = foreignFeed.Get(update1Timestamp)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if !bytes.Equal(update1Data, res) {
-		t.Fatalf("Expected body '%x', got '%x'", update1Data, res)
-	}
+	wg.Wait()
 }
 
 var counter = new(int64)
