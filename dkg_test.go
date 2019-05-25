@@ -98,7 +98,10 @@ func TestBzzStream(t *testing.T) {
 	srv := http.NewTestSwarmServer(t, func(i *api.API) http.TestServer {
 		return http.NewServer(i, "")
 	}, nil)
-	defer srv.Close()
+	defer func() {
+		fmt.Println("*** Server is closed ***")
+		srv.Close()
+	}()
 
 	const numUsers = 5
 	var myFeeds []*MyFeed
