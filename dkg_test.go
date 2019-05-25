@@ -1,21 +1,20 @@
 package swarmdkg
 
 import (
-	"strconv"
-	"testing"
-	"github.com/ethereum/go-ethereum/swarm/storage/feed"
-	"github.com/ethereum/go-ethereum/swarm/storage/feed/lookup"
-	"net/url"
-	"fmt"
-	"io/ioutil"
 	"bytes"
-	"github.com/ethereum/go-ethereum/swarm/testutil"
-	"github.com/ethereum/go-ethereum/swarm/storage"
 	"encoding/json"
+	"fmt"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/swarm/api"
 	sr "github.com/ethereum/go-ethereum/swarm/api/http"
+	"github.com/ethereum/go-ethereum/swarm/storage"
+	"github.com/ethereum/go-ethereum/swarm/storage/feed"
+	"github.com/ethereum/go-ethereum/swarm/testutil"
+	"io/ioutil"
 	"net/http"
-	crypto "github.com/ethereum/go-ethereum/crypto"
+	"net/url"
+	"strconv"
+	"testing"
 )
 
 // Test Swarm feeds using the raw update methods
@@ -163,11 +162,10 @@ func TestBzzFeed(t *testing.T) {
 	// test manifest-less queries
 	t.Log("get first update in update1Timestamp via direct query")
 
-	query := feed.NewQuery(&updateRequest.Feed, update1Timestamp, lookup.NoClue)
 	res, statusCode = testBZZGetRequest(t, srv.URL, "", "feed",
-		formQueryValue("time", strconv.FormatUint(query.TimeLimit, 10)),
-		formQueryValue("topic", query.Topic.Hex()),
-		formQueryValue("user", query.User.String()),
+		formQueryValue("time", strconv.FormatUint(update1Timestamp, 10)),
+		formQueryValue("topic", topic.Hex()),
+		formQueryValue("user", signer.Address().String()),
 	)
 	if statusCode != http.StatusOK {
 		t.Fatalf("Get feed returned %v", statusCode)
