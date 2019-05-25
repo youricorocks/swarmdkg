@@ -111,10 +111,10 @@ func TestBzzStream(t *testing.T) {
 	for i := 0; i < numUsers; i++ {
 		signer, _ := newTestSigner()
 		feeds = append(feeds, NewMyFeed("foo.eth", signer, srv.URL))
-		updateData = append(updateData, testutil.RandomBytes(1, 666))
+		updateData = append(updateData, testutil.RandomBytes(i, 20+i))
 	}
 
-	var streams []Stream
+	var streams []*Stream
 	for i := range feeds {
 		var streamFeeds []*Feed
 		for j := 0; j < numUsers; j++ {
@@ -128,23 +128,26 @@ func TestBzzStream(t *testing.T) {
 		streams = append(streams, NewStream(feeds[i], streamFeeds))
 	}
 
-
 	// creates feed and sets update 1
 	for i, stream := range streams {
 		stream.Broadcast(updateData[i])
 	}
 
+	//
+	time.Sleep(5*time.Second)
+
 	wg := sync.WaitGroup{}
-	for i, stream := range streams {
+	for i := range streams {
 		wg.Add(1)
 
+		fmt.Println("=== 111111111111")
 		go func(i int) {
-			msgCh := stream.Read()
 			defer wg.Done()
 
 			count := 0
 			select {
-			case msg := <-msgCh:
+			case msg := <-streams[i].Read():
+				fmt.Println("=== 222222222222")
 				isWaited := false
 				for _, data := range updateData {
 					if bytes.Equal(msg, data) {
@@ -157,9 +160,12 @@ func TestBzzStream(t *testing.T) {
 				count++
 				if count == len(updateData) {
 					// successful case
+					fmt.Println("successful case")
 					return
 				}
-			case <-time.After(1 * time.Second):
+				fmt.Println("still waiting for all messages", i, count)
+			case <-time.After(10 * time.Second):
+				fmt.Println("stream timeouted with", i, count)
 				t.Fatal("stream timeouted with", i, count)
 				return
 			}
@@ -167,6 +173,33 @@ func TestBzzStream(t *testing.T) {
 
 	}
 	wg.Wait()
+}
+
+func TestBzzStream1(t *testing.T) {
+	srv := http.NewTestSwarmServer(t, func(i *api.API) http.TestServer {
+		return http.NewServer(i, "")
+	}, nil)
+	defer srv.Close()
+
+	const numUsers = 1
+	var feeds []*MyFeed
+	var updateData [][]byte
+
+	// data of update 1
+	update1Timestamp := srv.CurrentTime
+	_ = update1Timestamp
+
+	for i := 0; i < numUsers; i++ {
+		signer, _ := newTestSigner()
+		feeds = append(feeds, NewMyFeed("foo.eth", signer, srv.URL))
+		updateData = append(updateData, testutil.RandomBytes(i, 666))
+	}
+
+	// creates feed and sets update 1
+	feeds[0].Broadcast(updateData[0])
+
+	msg, err := feeds[0].Read()
+	fmt.Println("!!!!!!!", err, msg)
 }
 
 var counter = new(int64)

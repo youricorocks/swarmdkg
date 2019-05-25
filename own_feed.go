@@ -28,7 +28,7 @@ func NewMyFeed(topic string, signer feed.Signer, url string) *MyFeed {
 
 func (own *MyFeed) Read() ([]byte, error) {
 	if len(own.manifestHash) == 0 {
-		return nil, errors.New("own.manifestHash should be inited")
+		return nil, errors.New("own.manifestHash should be initialised")
 	}
 	return own.Feed.Read(own.manifestHash)
 }
@@ -42,6 +42,7 @@ func (own *MyFeed) Broadcast(msg []byte) error {
 
 		own.manifestHash = manifestHash.Hex()
 		own.counter++
+		fmt.Println("broadcast", own.User.String(), own.counter, own.manifestHash)
 		return nil
 	}
 
