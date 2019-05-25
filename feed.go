@@ -1,6 +1,9 @@
 package swarmdkg
 
-import "github.com/ethereum/go-ethereum/swarm/storage/feed"
+import (
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/swarm/storage/feed"
+)
 
 /*
 // Phase I
@@ -15,20 +18,15 @@ import "github.com/ethereum/go-ethereum/swarm/storage/feed"
 	ProcessReconstructCommits,
 */
 
-
-// мы хтим слушать фиды списка пользователей
-// мы хотим иметь фиды для разных событий
-
-// Из стрима читаем и пишем в него. В нем должен жить и наш Feed
-type Stream struct {
-	Own MyFeed
-	Feeds []Feed
+type Feed struct{
+	Topic string
+	User common.Address
 }
 
-type MyFeed struct{
-	Feed
-	feed.Signer
+func NewFeed(topic string, user common.Address) Feed {
+	return Feed{topic, user}
 }
 
-// Только читаем из фида
-type Feed struct{}
+func (f Feed) Read() []byte {
+
+}
