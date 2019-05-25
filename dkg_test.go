@@ -149,9 +149,8 @@ func TestBzzFeed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	expectedCode := http.StatusBadRequest
-	if resp.StatusCode != expectedCode {
-		t.Fatalf("Update returned %s. Expected %d", resp.Status, expectedCode)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("Update returned %s. Expected %d", resp.Status, http.StatusBadRequest)
 	}
 
 	// 2nd attempt with bad query parameters in which the signature is of incorrect length
@@ -161,9 +160,8 @@ func TestBzzFeed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	expectedCode = http.StatusBadRequest
-	if resp.StatusCode != expectedCode {
-		t.Fatalf("Update returned %s. Expected %d", resp.Status, expectedCode)
+	if resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("Update returned %s. Expected %d", resp.Status, http.StatusBadRequest)
 	}
 
 	// 3rd attempt, with good query parameters:
@@ -173,9 +171,8 @@ func TestBzzFeed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	expectedCode = http.StatusOK
-	if resp.StatusCode != expectedCode {
-		t.Fatalf("Update returned %s. Expected %d", resp.Status, expectedCode)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("Update returned %s. Expected %d", resp.Status, http.StatusOK)
 	}
 
 	// get latest update through bzz-feed directly
