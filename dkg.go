@@ -7,6 +7,10 @@ import (
 	"go.dedis.ch/kyber"
 	"go.dedis.ch/kyber/pairing/bn256"
 	rabin "go.dedis.ch/kyber/share/dkg/rabin"
+	"go.dedis.ch/kyber/share/vss/rabin"
+
+	"bytes"
+	"encoding/gob"
 	"go.dedis.ch/kyber/util/key"
 	"sort"
 	"time"
@@ -19,14 +23,16 @@ const (
 	STATE_PUBKEY_RECEIVE
 	STATE_SEND_DEALS
 	STATE_PROCESS_DEALS
+	STATE_PROCESS_SEND_RESPONSES
+	STATE_PROCESS_PROCESS_RESPONSES
 )
 
 var timeoutErr = errors.New("timeout")
 
 type DKGMessage struct {
-	Data    []byte
-	ToIndex int
 	From    int
+	ToIndex int
+	Data    []byte
 }
 
 type Streamer interface {
@@ -69,8 +75,9 @@ type DKGInstance struct {
 	State      int
 	KeyPair    *key.Pair
 
-	pubkeys []kyber.Point
-	Index   int
+	pubkeys  []kyber.Point
+	Index    int
+	dkgRabin *rabin.DistKeyGenerator
 }
 
 func (i *DKGInstance) SendPubkey() error {
@@ -80,7 +87,6 @@ func (i *DKGInstance) SendPubkey() error {
 		return err
 	}
 	i.Streamer.Broadcast(publicKeyBin)
-	i.State = STATE_PUBKEY_RECEIVE
 	return nil
 }
 
@@ -99,7 +105,6 @@ func (i *DKGInstance) ReceivePubkeys() error {
 		case <-time.After(TIMEOUT_FOR_STATE):
 			i.pubkeys = i.pubkeys[:0]
 			return timeoutErr
-
 		}
 		if len(i.pubkeys) == i.NumOfNodes {
 			break
@@ -123,41 +128,80 @@ func (i *DKGInstance) SendDeals() error {
 		}
 	}
 
-	fmt.Println("LN", len(i.pubkeys))
-	dkgInstance, err := rabin.NewDistKeyGenerator(i.Suite, i.KeyPair.Private, i.pubkeys, i.Treshold)
+	var err error
+	i.dkgRabin, err = rabin.NewDistKeyGenerator(i.Suite, i.KeyPair.Private, i.pubkeys, i.Treshold)
 	if err != nil {
 		return fmt.Errorf("Dkg instance init error: %v", err)
 	}
-	deals, err := dkgInstance.Deals()
+	deals, err := i.dkgRabin.Deals()
 	if err != nil {
 		return fmt.Errorf("deal generation error: %v", err)
 	}
 
-	fmt.Println(i.Index, "ln deals", len(deals))
 	for toIndex, deal := range deals {
-		b, err := json.Marshal(deal)
-		if err != nil {
-			fmt.Println("marshall err1", err)
-			return err
-		}
+		b := bytes.NewBuffer(nil)
+		err = gob.NewEncoder(b).Encode(deal)
+
 		msg := DKGMessage{
-			Data:    b,
+			Data:    b.Bytes(),
 			ToIndex: toIndex,
 			From:    i.Index,
 		}
 		msgBin, err := json.Marshal(msg)
 		if err != nil {
-			fmt.Println("marshall err2", err)
 			return err
 		}
 
 		i.Streamer.Broadcast(msgBin)
 	}
-	fmt.Println("deals sent", i.Index)
-
 	return nil
 }
 func (i *DKGInstance) ProcessDeals() error {
+	ch := i.Streamer.Read()
+	numOfDeals := i.NumOfNodes - 1
+	respList := make([]*rabin.Response, 0)
+
+	for {
+		select {
+		case deal := <-ch:
+			var msg DKGMessage
+			err := json.Unmarshal(deal, &msg)
+			if err != nil {
+				return err
+			}
+			if msg.ToIndex != i.Index {
+				continue
+			}
+
+			dd := &rabin.Deal{
+				Deal: &vss.EncryptedDeal{
+					DHKey: i.Suite.Point(),
+				},
+			}
+
+			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
+			err = dec.Decode(dd)
+			if err != nil {
+				return err
+			}
+
+			resp, err := i.dkgRabin.ProcessDeal(dd)
+			if err != nil {
+				return err
+			}
+			respList = append(respList, resp)
+			numOfDeals--
+
+		case <-time.After(TIMEOUT_FOR_STATE):
+			i.pubkeys = i.pubkeys[:0]
+			return timeoutErr
+
+		}
+		if numOfDeals == 0 {
+			break
+		}
+	}
+
 	return nil
 }
 func (i *DKGInstance) ProcessResponses() error {
@@ -206,6 +250,14 @@ func (i *DKGInstance) Run() error {
 				panic(err)
 			}
 			i.moveToState(STATE_PROCESS_DEALS)
+		case STATE_PROCESS_DEALS:
+			err := i.ProcessDeals()
+			if err != nil {
+				//todo errcheck
+				i.moveToState(STATE_PUBKEY_SEND)
+				panic(err)
+			}
+			i.moveToState(STATE_PROCESS_SEND_RESPONSES)
 
 		default:
 			fmt.Println("default Exit")
