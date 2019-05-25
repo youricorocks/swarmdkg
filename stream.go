@@ -27,6 +27,8 @@ func (s Stream) Read() chan []byte {
 
 		// fixme do requests in goroutines
 		for t := range timer.C {
+			now := uint64(t.Unix())
+
 			msg, err := s.Own.Read()
 			if err != nil {
 				fmt.Println("Error while reading own feed", err)
@@ -36,7 +38,8 @@ func (s Stream) Read() chan []byte {
 			}
 
 			for _, feed := range s.Feeds {
-				msg, err = feed.Get(uint64(t.Unix()))
+				//fixme I'm not very sure could it skip a few updates or not
+				msg, err = feed.Get(now)
 				if err != nil {
 					fmt.Println("Error while reading own feed", err)
 				}
