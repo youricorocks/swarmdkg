@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/swarm/api"
+	"github.com/ethereum/go-ethereum/swarm/storage/feed"
 	"net/http"
+	"strconv"
 )
 
 type Feed struct {
@@ -52,4 +54,25 @@ func (f *Feed) GetManifest(manifestHash string) (*api.Manifest, error) {
 	}
 
 	return manifest, nil
+}
+
+func (f *Feed) Get(timestamp uint64) ([]byte, error) {
+	topic, _ := feed.NewTopic(f.Topic, nil)
+	res, statusCode, err := GetRequestBZZ(f.URL, "", "feed",
+		formQueryValue("time", strconv.FormatUint(timestamp, 10)),
+		formQueryValue("topic", topic.Hex()),
+		formQueryValue("user", f.User.String()),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if statusCode != http.StatusOK {
+		return nil, fmt.Errorf("get feed returned %v", statusCode)
+	}
+
+	return res, nil
+}
+
+func formQueryValue(key, value string) string {
+	return fmt.Sprintf("%s=%s", key, value)
 }
