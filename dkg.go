@@ -57,6 +57,7 @@ type DKGInstance struct {
 	Treshold   int
 	Suite      *bn256.Suite
 	State      int
+	KeyPair    *key.Pair
 
 	pubkeys []kyber.Point
 }
@@ -83,6 +84,7 @@ func (i *DKGInstance) ReceivePubkeys() error {
 				i.pubkeys = i.pubkeys[:0]
 				return err
 			}
+			i.pubkeys = append(i.pubkeys, point)
 		case <-time.After(TIMEOUT_FOR_STATE):
 			i.pubkeys = i.pubkeys[:0]
 			return timeoutErr
@@ -138,7 +140,18 @@ func (i *DKGInstance) Run() error {
 				i.moveToState(STATE_PUBKEY_SEND)
 				panic(err)
 			}
+			i.moveToState(STATE_SEND_DEALS)
+		case STATE_SEND_DEALS:
+			err := i.SendDeals()
+			if err != nil {
+				//todo errcheck
+				i.moveToState(STATE_PUBKEY_SEND)
+				panic(err)
+			}
+			i.moveToState(STATE_PROCESS_DEALS)
 
+		default:
+			return errors.New("unknown state")
 		}
 	}
 	return nil

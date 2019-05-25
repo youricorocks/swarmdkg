@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"sync"
 	"testing"
 )
 
@@ -207,9 +208,19 @@ func formQueryValue(key, value string) string {
 func TestMockDKG(t *testing.T) {
 	numOfDKGNodes := 4
 	threshold := 3
-	dkg := NewDkg(nil, bn256.NewSuiteG2(), numOfDKGNodes, threshold)
-	err := dkg.Run()
-	if err != nil {
-		t.Fatal(err)
+	chans := NewReadChans(numOfDKGNodes)
+	wg := sync.WaitGroup{}
+	wg.Add(numOfDKGNodes)
+	for i := 0; i < numOfDKGNodes; i++ {
+		localI := i
+		go func() {
+			dkg := NewDkg(NewStreamerMock(chans, localI), bn256.NewSuiteG2(), numOfDKGNodes, threshold)
+			err := dkg.Run()
+			if err != nil {
+				t.Log(err)
+			}
+			wg.Done()
+		}()
 	}
+	wg.Wait()
 }
