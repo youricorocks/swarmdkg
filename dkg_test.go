@@ -95,51 +95,15 @@ func TestBzzMyFeed(t *testing.T) {
 }
 
 func TestBzzStream(t *testing.T) {
-	srv := http.NewTestSwarmServer(t, func(i *api.API) http.TestServer {
-		return http.NewServer(i, "")
-	}, nil)
-
 	const numUsers = 5
-	var myFeeds []*MyFeed
 	var updateData [][]byte
-
-	// data of update 1
-	update1Timestamp := srv.CurrentTime
-	_ = update1Timestamp
-
 	for i := 0; i < numUsers; i++ {
-		signer, _ := newTestSigner()
-		myFeeds = append(myFeeds, NewMyFeed("foo.eth", signer, srv.URL))
 		updateData = append(updateData, testutil.RandomBytes(i, 20+i))
 	}
 
-	var streams []*Stream
-	var closers []func()
-	for i := range myFeeds {
-		var streamFeeds []*Feed
-		for j := 0; j < numUsers; j++ {
-			if j == i {
-				continue
-			}
-			f := myFeeds[j]
-			streamFeeds = append(streamFeeds, NewFeed(f.Topic, f.User, f.URL))
-		}
+	streams, closerFunc := getStreams(t, numUsers, "some-topic")
+	defer closerFunc()
 
-		stream := NewStream(myFeeds[i], streamFeeds)
-		closers = append(closers, stream.Close)
-		streams = append(streams, stream)
-	}
-
-	defer func() {
-		for _, closeFunc := range closers {
-			closeFunc()
-		}
-
-		fmt.Println("*** Server is closed ***")
-		srv.Close()
-	}()
-
-	// creates feed and sets update 1
 	for i, stream := range streams {
 		stream.Broadcast(updateData[i])
 	}
@@ -187,6 +151,66 @@ func TestBzzStream(t *testing.T) {
 	fmt.Println("done")
 }
 
+func TestBzzStreamBroadcastGetManyTimes(t *testing.T) {
+	const numUsers = 5
+	streams, closerFunc := getStreams(t, numUsers, "some-topic")
+	defer closerFunc()
+
+	for idx := 0; idx < 3; idx++ {
+		var updateData [][]byte
+		for i := 0; i < numUsers; i++ {
+			updateData = append(updateData, testutil.RandomBytes(i+idx, 20+i+idx))
+		}
+
+		for i, stream := range streams {
+			stream.Broadcast(updateData[i])
+		}
+
+		//wait for a broadcast
+		time.Sleep(1 * time.Second)
+
+		wg := sync.WaitGroup{}
+		for i := range streams {
+			wg.Add(1)
+
+			go func(i int) {
+				count := 0
+				defer wg.Done()
+
+				for {
+					select {
+					case msg := <-streams[i].Read():
+						isWaited := false
+						for _, data := range updateData {
+							if bytes.Equal(msg, data) {
+								isWaited = true
+							}
+						}
+						if !isWaited {
+							t.Fatal("stream got unexpected value", i, msg, updateData)
+							return
+						}
+
+						count++
+						if count == len(updateData) {
+							// successful case
+							fmt.Println("successful case")
+							return
+						}
+					case <-time.After(5 * time.Second):
+						fmt.Println("stream timeouted with", i, count)
+						t.Fatal("stream timeouted with", i, count)
+						return
+					}
+				}
+			}(i)
+		}
+		wg.Wait()
+	}
+
+	fmt.Println("done")
+}
+
 var counter = new(int64)
 
 func init() {
@@ -221,4 +245,68 @@ func TestMockDKG(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+}
+
+func TestDKG(t *testing.T) {
+	numOfDKGNodes := 4
+	threshold := 3
+
+	streams, closerFunc := getStreams(t, numOfDKGNodes, "dkg1")
+	defer closerFunc()
+
+	wg := sync.WaitGroup{}
+	wg.Add(numOfDKGNodes)
+	for i := 0; i < numOfDKGNodes; i++ {
+		localI := i
+		go func() {
+			dkg := NewDkg(streams[localI], bn256.NewSuiteG2(), numOfDKGNodes, threshold)
+			err := dkg.Run()
+			if err != nil {
+				t.Log(err)
+			}
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+}
+
+func getStreams(t *testing.T, numUsers int, topic string) (streams []*Stream, closer func()) {
+	t.Helper()
+
+	srv := http.NewTestSwarmServer(t, func(i *api.API) http.TestServer {
+		return http.NewServer(i, "")
+	}, nil)
+
+	var myFeeds []*MyFeed
+	for i := 0; i < numUsers; i++ {
+		signer, _ := newTestSigner()
+		myFeeds = append(myFeeds, NewMyFeed(topic, signer, srv.URL))
+	}
+
+	var closers []func()
+	for i := range myFeeds {
+		var streamFeeds []*Feed
+		for j := 0; j < numUsers; j++ {
+			if j == i {
+				continue
+			}
+			f := myFeeds[j]
+			streamFeeds = append(streamFeeds, NewFeed(f.Topic, f.User, f.URL))
+		}
+
+		stream := NewStream(myFeeds[i], streamFeeds)
+		closers = append(closers, stream.Close)
+		streams = append(streams, stream)
+	}
+
+	closer = func() {
+		for _, closeFunc := range closers {
+			closeFunc()
+		}
+
+		fmt.Println("*** Server is closed ***")
+		srv.Close()
+	}
+
+	return
 }
