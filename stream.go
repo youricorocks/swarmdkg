@@ -40,7 +40,7 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 		for {
 			msg, err := s.Own.Read()
 			if err != nil {
-				fmt.Println("Error while reading own feed", err)
+				//fmt.Println("Error while reading own feed", err)
 			} else if len(msg) != 0 {
 				s.Messages <- msg
 			}
@@ -70,7 +70,6 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 
 					s.cache[hex.EncodeToString(msg)] = struct{}{}
 					s.Messages <- msg
-					//fmt.Println("GET FROM FEED", feed.User.String(), len(s.Messages), feed.Topic, msg)
 
 					return nil
 				})

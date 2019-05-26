@@ -359,17 +359,24 @@ func TestDKG(t *testing.T) {
 
 				mySign, err := verifier.Sign(previousRandom)
 				if err != nil {
-					t.Log(err)
+					fmt.Println("+++ random 1", err)
 				}
 
 				stream.Broadcast(mySign)
 
+				signsCache := make(map[string]struct{})
+
 				got := 0
 				var signs [][]byte
 				for msg := range stream.Read() {
+					if _, ok := signsCache[hex.EncodeToString(msg)]; ok {
+						continue
+					}
+					signsCache[hex.EncodeToString(msg)] = struct{}{}
+
 					err = verifier.VerifyRandomShare(previousRandom, msg)
 					if err != nil {
-						t.Log(err)
+						fmt.Println("+++ random 2", err)
 					} else {
 						signs = append(signs, msg)
 						got++
@@ -382,7 +389,7 @@ func TestDKG(t *testing.T) {
 
 				newRandom, err := verifier.Recover(previousRandom, signs)
 				if err != nil {
-					t.Log(err)
+					fmt.Println("+++ random 3", err)
 				}
 
 				fmt.Printf("DONE Random round %d - random %s\n", randomRound, hex.EncodeToString(newRandom))

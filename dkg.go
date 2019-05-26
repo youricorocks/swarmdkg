@@ -551,12 +551,10 @@ func (i *DKGInstance) Run() error {
 	}
 	signersLock.Unlock()
 
-	var closerFunc func()
-
 	for {
 		switch i.State {
 		case STATE_PUBKEY_SEND:
-			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx, "pubkey")
+			i.Streamer, _ = GenerateStream(i.Server, signers, i.SignerIdx, "pubkey")
 			time.Sleep(2 * time.Second)
 
 			err := i.SendPubkey()
@@ -575,10 +573,9 @@ func (i *DKGInstance) Run() error {
 				panic(err)
 			}
 
-			closerFunc()
 			i.moveToState(STATE_SEND_DEALS)
 		case STATE_SEND_DEALS:
-			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx, "deals")
+			i.Streamer, _ = GenerateStream(i.Server, signers, i.SignerIdx, "deals")
 			time.Sleep(2 * time.Second)
 
 			err := i.SendDeals()
@@ -596,10 +593,9 @@ func (i *DKGInstance) Run() error {
 				panic(err)
 			}
 
-			closerFunc()
 			i.moveToState(STATE_SEND_RESPONSES)
 		case STATE_SEND_RESPONSES:
-			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx, "responses")
+			i.Streamer, _ = GenerateStream(i.Server, signers, i.SignerIdx, "responses")
 			time.Sleep(2 * time.Second)
 
 			err := i.SendResponses()
@@ -627,10 +623,9 @@ func (i *DKGInstance) Run() error {
 				panic(err)
 			}
 
-			closerFunc()
 			i.moveToState(STATE_PROCESS_Commits)
 		case STATE_PROCESS_Commits:
-			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx, "commits")
+			i.Streamer, _ = GenerateStream(i.Server, signers, i.SignerIdx, "commits")
 			time.Sleep(2 * time.Second)
 
 			err := i.ProcessCommits()
@@ -640,7 +635,6 @@ func (i *DKGInstance) Run() error {
 				panic(err)
 			}
 
-			closerFunc()
 			i.moveToState(STATE_PROCESS_Complaints)
 		case STATE_PROCESS_Complaints:
 			err := i.ProcessComplaints()
