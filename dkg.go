@@ -467,11 +467,18 @@ func (i *DKGInstance) ProcessCommits() error {
 	}
 	i.Streamer.Broadcast(b)
 
+	commitCache := make(map[string]struct{})
+
 	ch := i.Streamer.Read()
 	numOfCommits := i.NumOfNodes - 1
 	for {
 		select {
 		case commit := <-ch:
+			if _, ok := commitCache[hex.EncodeToString(commit)]; ok {
+				continue
+			}
+			commitCache[hex.EncodeToString(commit)] = struct{}{}
+
 			var msg DKGMessage
 			err := json.Unmarshal(commit, &msg)
 			if err != nil {
