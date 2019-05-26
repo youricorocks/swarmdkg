@@ -26,7 +26,7 @@ func newTestSigner() (*feed.GenericSigner, error) {
 }
 
 func newTestSigners(n int) ([]*feed.GenericSigner, error) {
-	counter := startValue
+	counter := 0
 
 	signers := make([]*feed.GenericSigner, n)
 

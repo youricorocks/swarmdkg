@@ -92,6 +92,7 @@ func (i *DKGInstance) SendPubkey() error {
 		return err
 	}
 	i.Streamer.Broadcast(publicKeyBin)
+	time.Sleep(2*time.Second)
 	return nil
 }
 
@@ -146,6 +147,9 @@ func (i *DKGInstance) SendDeals() error {
 	for toIndex, deal := range deals {
 		b := bytes.NewBuffer(nil)
 		err = gob.NewEncoder(b).Encode(deal)
+		if err != nil {
+			return err
+		}
 
 		msg := DKGMessage{
 			Data:    b.Bytes(),
@@ -158,6 +162,7 @@ func (i *DKGInstance) SendDeals() error {
 		}
 
 		i.Streamer.Broadcast(msgBin)
+		time.Sleep(2*time.Second)
 	}
 	return nil
 }
@@ -172,6 +177,7 @@ func (i *DKGInstance) ProcessDeals() error {
 			var msg DKGMessage
 			err := json.Unmarshal(deal, &msg)
 			if err != nil {
+				fmt.Println("fuck 1")
 				return err
 			}
 			if msg.ToIndex != i.Index {
@@ -187,6 +193,7 @@ func (i *DKGInstance) ProcessDeals() error {
 			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
 			err = dec.Decode(dd)
 			if err != nil {
+				fmt.Println("fuck 2")
 				return err
 			}
 
@@ -194,6 +201,7 @@ func (i *DKGInstance) ProcessDeals() error {
 			if err != nil {
 				fmt.Println("*** 1", deal)
 				fmt.Println("*** 2", dd.Index, *dd.Deal)
+				fmt.Println("fuck 3")
 				return err
 			}
 			fmt.Println("*** 3", dd.Index, *dd.Deal)
@@ -238,8 +246,9 @@ var signersLock = new(sync.Mutex)
 func (i *DKGInstance) Run() error {
 	signersLock.Lock()
 	if signers == nil {
-		fmt.Println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
-		signers, _ = newTestSigners(i.NumOfNodes)
+		var err error
+		signers, err = newTestSigners(i.NumOfNodes)
+		fmt.Println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", err)
 	}
 	signersLock.Unlock()
 
@@ -248,8 +257,8 @@ func (i *DKGInstance) Run() error {
 	for {
 		switch i.State {
 		case STATE_PUBKEY_SEND:
-			fmt.Println("xxx 1", i.SignerIdx, i.Index)
 			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx,"pubkey")
+			fmt.Println("xxx 1", i.SignerIdx, i.Index, i.Streamer)
 			time.Sleep(time.Second)
 
 			err := i.SendPubkey()
@@ -271,8 +280,8 @@ func (i *DKGInstance) Run() error {
 			closerFunc()
 			i.moveToState(STATE_SEND_DEALS)
 		case STATE_SEND_DEALS:
-			fmt.Println("xxx 2", i.SignerIdx, i.Index)
 			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx,"deals")
+			fmt.Println("xxx 2", i.SignerIdx, i.Index, i.Streamer)
 			time.Sleep(time.Second)
 
 			err := i.SendDeals()
