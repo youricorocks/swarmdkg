@@ -2,7 +2,6 @@ package swarmdkg
 
 import (
 	"encoding/hex"
-	"fmt"
 	"github.com/ethereum/go-ethereum/swarm/storage/feed"
 	"sync"
 	"time"
