@@ -318,20 +318,14 @@ func (i *DKGInstance) ProcessResponses() error {
 	ch := i.Streamer.Read()
 	numOfResponses := (i.NumOfNodes - 1) * (i.NumOfNodes - 1)
 	just := make([]*rabin.Justification, 0)
-	responseCache := make(map[string]struct{})
 
 	for {
 		select {
 		case resp := <-ch:
-			if _, ok := responseCache[hex.EncodeToString(resp)]; ok {
-				continue
-			}
-			responseCache[hex.EncodeToString(resp)] = struct{}{}
-
 			var msg DKGMessage
 			err := json.Unmarshal(resp, &msg)
 			if err != nil {
-				return err
+				continue
 			}
 
 			if msg.Type != MESSAGE_RESPONSE {
@@ -344,7 +338,7 @@ func (i *DKGInstance) ProcessResponses() error {
 			err = dec.Decode(r)
 			if err != nil {
 				ch <- resp
-				return err
+				continue
 			}
 
 			if uint32(i.Index) == r.Response.Index {
@@ -352,7 +346,7 @@ func (i *DKGInstance) ProcessResponses() error {
 			}
 			j, err := i.DkgRabin.ProcessResponse(r)
 			if err != nil {
-				return err
+				continue
 			}
 
 			just = append(just, j)
