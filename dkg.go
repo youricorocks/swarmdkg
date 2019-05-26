@@ -678,10 +678,6 @@ func (i *DKGInstance) moveToState(state int) {
 }
 
 func (i *DKGInstance) GetVerifier() (*BLSVerifier, error) {
-	if i.DkgRabin == nil || !i.DkgRabin.Finished() {
-		return nil, errors.New("not ready yet")
-	}
-
 	distKeyShare, err := i.DkgRabin.DistKeyShare()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get DistKeyShare: %v", err)
