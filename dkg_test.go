@@ -327,6 +327,7 @@ func TestDKG(t *testing.T) {
 				verifier, err := dkg.GetVerifier()
 				if err != nil {
 					//t.Log(err)
+					return
 				}
 
 				randomRound := 0
