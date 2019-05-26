@@ -1,2 +1,2 @@
 run:
-	go test ./... -v
+	go test  -v -run "TestDKG" ./
