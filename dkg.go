@@ -34,6 +34,8 @@ const (
 	MESSAGE_DEAL = iota
 	MESSAGE_RESPONSE
 	MESSAGE_JUSTIFICATION
+	MESSAGE_SECRET_COMMITS
+	MESSAGE_COMPLAINS
 )
 
 var timeoutErr = errors.New("timeout")
@@ -88,6 +90,7 @@ type DKGInstance struct {
 
 	pubkeys   []kyber.Point
 	responses []*rabin.Response
+	complains []*rabin.ComplaintCommits
 	Index     int
 	dkgRabin  *rabin.DistKeyGenerator
 }
@@ -359,6 +362,99 @@ func (i *DKGInstance) ProcessJustifications() error {
 
 // Phase II
 func (i *DKGInstance) ProcessCommits() error {
+	commits, err := i.dkgRabin.SecretCommits()
+	if err != nil {
+		return err
+	}
+	fmt.Println("sc len", len(commits.Commitments))
+
+	buf := bytes.NewBuffer(nil)
+	err = gob.NewEncoder(buf).Encode(commits)
+	if err != nil {
+		return err
+	}
+
+	msg := DKGMessage{
+		From: i.Index,
+		Type: MESSAGE_SECRET_COMMITS,
+		Data: buf.Bytes(),
+	}
+
+	b, err := json.Marshal(&msg)
+	if err != nil {
+		return err
+	}
+	i.Streamer.Broadcast(b)
+
+	ch := i.Streamer.Read()
+	numOfCommits := i.NumOfNodes - 1
+	for {
+		select {
+		case commit := <-ch:
+			var msg DKGMessage
+			err := json.Unmarshal(commit, &msg)
+			if err != nil {
+				return err
+			}
+			if msg.From == i.Index {
+				continue
+			}
+
+			if msg.Type != MESSAGE_SECRET_COMMITS {
+				continue
+			}
+			fmt.Println(i.Index, msg.From, string(commit))
+			commitData := &rabin.SecretCommits{}
+			for j := 0; j < len(i.dkgRabin.QUAL())-1; j++ {
+				commitData.Commitments = append(commitData.Commitments, i.Suite.Point())
+			}
+			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
+			err = dec.Decode(commitData)
+			if err != nil {
+				return err
+			}
+
+			complain, err := i.dkgRabin.ProcessSecretCommits(commitData)
+			if err != nil {
+				return err
+			}
+			i.complains = append(i.complains, complain)
+			numOfCommits--
+		case <-time.After(TIMEOUT_FOR_STATE):
+			i.pubkeys = i.pubkeys[:0]
+			return timeoutErr
+
+		}
+		if numOfCommits == 0 {
+			break
+		}
+	}
+
+	for j := range i.complains {
+		var data []byte
+		if i.complains[j] != nil {
+			buf := bytes.NewBuffer(nil)
+			err = gob.NewEncoder(buf).Encode(i.complains[j])
+			if err != nil {
+				return err
+			}
+			data = buf.Bytes()
+		}
+
+		msg := DKGMessage{
+			From: i.Index,
+			Type: MESSAGE_COMPLAINS,
+			Data: data,
+		}
+
+		b, err := json.Marshal(&msg)
+		if err != nil {
+			return err
+		}
+		i.Streamer.Broadcast(b)
+	}
+	i.complains = i.complains[:0]
+
 	return nil
 }
 func (i *DKGInstance) ProcessComplaints() error {
@@ -429,6 +525,14 @@ func (i *DKGInstance) Run() error {
 				panic(err)
 			}
 			i.moveToState(STATE_PROCESS_Commits)
+		case STATE_PROCESS_Commits:
+			err := i.ProcessCommits()
+			if err != nil {
+				//todo errcheck
+				i.moveToState(STATE_PUBKEY_SEND)
+				panic(err)
+			}
+			i.moveToState(STATE_PROCESS_Complaints)
 
 		default:
 			fmt.Println("default Exit")
