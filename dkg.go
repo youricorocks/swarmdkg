@@ -334,6 +334,7 @@ func (i *DKGInstance) ProcessResponses() error {
 			}
 
 			if msg.Type != MESSAGE_RESPONSE {
+				ch <- resp
 				continue
 			}
 			r := &rabin.Response{}
@@ -409,6 +410,7 @@ func (i *DKGInstance) ProcessJustifications() error {
 			}
 
 			if msg.Type != MESSAGE_JUSTIFICATION {
+				ch <- resp
 				continue
 			}
 
@@ -485,6 +487,7 @@ func (i *DKGInstance) ProcessCommits() error {
 			}
 
 			if msg.Type != MESSAGE_SECRET_COMMITS {
+				ch <- commit
 				continue
 			}
 
