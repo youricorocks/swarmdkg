@@ -42,7 +42,7 @@ func GetRequestBZZ(url string, params ...string) ([]byte, int, error) {
 		return nil, resp.StatusCode, err
 	}
 
-	fmt.Println("----", err, testBzzUrl)
+	//fmt.Println("----", err, testBzzUrl)
 
 	return res, resp.StatusCode, nil
 }

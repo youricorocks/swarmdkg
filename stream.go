@@ -30,7 +30,7 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 		close:    make(chan struct{}),
 	}
 
-	timeCounter := uint64(time.Now().Unix())-10
+	timeCounter := uint64(time.Now().Unix()) - 10
 
 	go func() {
 		//fixme I'm not very sure could it skip a few updates or not
@@ -128,7 +128,7 @@ func GenerateStreams(srv Server, signers []*feed.GenericSigner, topic string) (s
 			closeFunc()
 		}
 
-		fmt.Println("*** Server is closed ***")
+		//fmt.Println("*** Server is closed ***")
 		//srv.Close()
 	}
 
@@ -155,7 +155,7 @@ func GenerateStream(srv Server, signers []*feed.GenericSigner, signerIdx int, to
 			closeFunc()
 		}
 
-		fmt.Println("*** Server is closed ***")
+		//fmt.Println("*** Server is closed ***")
 		//srv.Close()
 	}
 
