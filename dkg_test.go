@@ -9,11 +9,11 @@ import (
 	"github.com/ethereum/go-ethereum/swarm/storage/feed"
 	"github.com/ethereum/go-ethereum/swarm/testutil"
 	"go.dedis.ch/kyber/pairing/bn256"
+	"math/rand"
 	"strconv"
 	"sync"
 	"testing"
 	"time"
-	"math/rand"
 )
 
 // Test Swarm feeds using the raw update methods
@@ -303,7 +303,7 @@ func TestDKG(t *testing.T) {
 		s, _ := newTestSigner()
 		signers = append(signers, s)
 	}
-	roundID:=rand.Int()
+	roundID := rand.Int()
 	wg := sync.WaitGroup{}
 	wg.Add(numOfDKGNodes)
 	srv := GetTestServer()
@@ -321,71 +321,73 @@ func TestDKG(t *testing.T) {
 			wg.Done()
 
 			go func() {
-				// generate random stage
-				dkg := dkgs[localI]
-
-				verifier, err := dkg.GetVerifier()
-				if err != nil {
-					//t.Log(err)
-					return
-				}
-
-				randomRound := 0
-				previousRandom := []byte("some initial vector")
 				for {
-					stream, closerFunc := GenerateStream(dkg.Server, signers, dkg.SignerIdx, "random"+strconv.Itoa(randomRound))
-					time.Sleep(2*time.Second)
+					// generate random stage
+					dkg := dkgs[localI]
 
-					mySign, err := verifier.Sign(previousRandom)
+					verifier, err := dkg.GetVerifier()
 					if err != nil {
-						//fmt.Println("+++ random 1", err)
+						time.Sleep(time.Second)
 						continue
 					}
 
-					stream.Broadcast(mySign)
+					randomRound := 0
+					previousRandom := []byte("some initial vector")
+					for {
+						stream, closerFunc := GenerateStream(dkg.Server, signers, dkg.SignerIdx, "random"+strconv.Itoa(randomRound))
+						time.Sleep(2 * time.Second)
 
-					signsCache := make(map[string]struct{})
-
-					got := 0
-					var signs [][]byte
-					for msg := range stream.Read() {
-						if _, ok := signsCache[hex.EncodeToString(msg)]; ok {
-							continue
-						}
-						signsCache[hex.EncodeToString(msg)] = struct{}{}
-
-						err = verifier.VerifyRandomShare(previousRandom, msg)
+						mySign, err := verifier.Sign(previousRandom)
 						if err != nil {
-							fmt.Println("+++ random 2", err)
+							//fmt.Println("+++ random 1", err)
 							continue
-						} else {
-							signs = append(signs, msg)
-							got++
 						}
 
-						if got == numOfDKGNodes {
-							break
+						stream.Broadcast(mySign)
+
+						signsCache := make(map[string]struct{})
+
+						got := 0
+						var signs [][]byte
+						for msg := range stream.Read() {
+							if _, ok := signsCache[hex.EncodeToString(msg)]; ok {
+								continue
+							}
+							signsCache[hex.EncodeToString(msg)] = struct{}{}
+
+							err = verifier.VerifyRandomShare(previousRandom, msg)
+							if err != nil {
+								fmt.Println("+++ random 2", err)
+								continue
+							} else {
+								signs = append(signs, msg)
+								got++
+							}
+
+							if got == numOfDKGNodes {
+								break
+							}
 						}
+
+						newRandom, err := verifier.Recover(previousRandom, signs)
+						if err != nil {
+							fmt.Println("+++ random 3", err)
+							continue
+						}
+
+						fmt.Printf("DONE Random round %d - random %s\n", randomRound, hex.EncodeToString(newRandom))
+
+						closerFunc()
+						randomRound++
+						previousRandom = newRandom
 					}
-
-					newRandom, err := verifier.Recover(previousRandom, signs)
-					if err != nil {
-						fmt.Println("+++ random 3", err)
-						continue
-					}
-
-					fmt.Printf("DONE Random round %d - random %s\n", randomRound, hex.EncodeToString(newRandom))
-
-					closerFunc()
-					randomRound++
-					previousRandom = newRandom
 				}
 			}()
 		}()
 	}
 	wg.Wait()
 
-	time.Sleep(10*time.Minute)
+	time.Sleep(10 * time.Minute)
 }
 
 func getStreams(t *testing.T, numUsers int, topic string) (streams []*Stream, closer func()) {

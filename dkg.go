@@ -475,7 +475,8 @@ func (i *DKGInstance) ProcessCommits() error {
 			var msg DKGMessage
 			err := json.Unmarshal(commit, &msg)
 			if err != nil {
-				return err
+				ch <- commit
+				continue
 			}
 			if msg.From == i.Index {
 				continue
@@ -493,12 +494,14 @@ func (i *DKGInstance) ProcessCommits() error {
 			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
 			err = dec.Decode(commitData)
 			if err != nil {
-				return err
+				ch <- commit
+				continue
 			}
 
 			complain, err := i.DkgRabin.ProcessSecretCommits(commitData)
 			if err != nil {
-				return err
+				ch <- commit
+				continue
 			}
 			i.complains = append(i.complains, complain)
 			numOfCommits--
@@ -630,6 +633,7 @@ func (i *DKGInstance) Run() error {
 				panic(err)
 			}
 
+			time.Sleep(5 * time.Second)
 			i.moveToState(STATE_PROCESS_Commits)
 		case STATE_PROCESS_Commits:
 			i.Streamer, _ = GenerateStream(i.Server, signers, i.SignerIdx, "commits")
@@ -642,6 +646,7 @@ func (i *DKGInstance) Run() error {
 				panic(err)
 			}
 
+			time.Sleep(5 * time.Second)
 			i.moveToState(STATE_PROCESS_Complaints)
 		case STATE_PROCESS_Complaints:
 			err := i.ProcessComplaints()
@@ -650,6 +655,7 @@ func (i *DKGInstance) Run() error {
 				i.moveToState(STATE_PUBKEY_SEND)
 				panic(err)
 			}
+
 			i.moveToState(STATE_PROCESS_ReconstructCommits)
 		case STATE_PROCESS_ReconstructCommits:
 			err := i.ProcessComplaints()
@@ -672,7 +678,7 @@ func (i *DKGInstance) moveToState(state int) {
 	i.State = state
 	fmt.Println("Everything is all right. we've just passed Distributed Key Generation stage", state, "of 9")
 	fmt.Println("Please wait 30-60 secs at this stage. It's just a PoC, be patient")
-	time.Sleep(2 * time.Second)
+	time.Sleep(5 * time.Second)
 }
 
 func (i *DKGInstance) GetVerifier() (*BLSVerifier, error) {
