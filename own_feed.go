@@ -49,7 +49,7 @@ func (own *MyFeed) Broadcast(msg []byte) error {
 
 		own.manifestHash = manifestHash.Hex()
 		own.counter++
-		fmt.Println("broadcast first", own.User.String(), own.counter, own.manifestHash)
+		fmt.Println("broadcast first", own.User.String(), own.counter, own.manifestHash, msg)
 
 		own.Unlock()
 		return nil
@@ -98,7 +98,7 @@ func (own *MyFeed) Broadcast(msg []byte) error {
 
 	own.Lock()
 	own.counter++
-	fmt.Println("broadcast", own.counter, own.User.String(), own.Topic, own.manifestHash)
+	fmt.Println("broadcast", own.counter, own.User.String(), own.Topic, own.manifestHash, msg)
 	own.Unlock()
 	return nil
 }

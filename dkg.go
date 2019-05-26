@@ -3,11 +3,13 @@ package swarmdkg
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/ethereum/go-ethereum/swarm/storage/feed"
 	"github.com/pkg/errors"
 	"go.dedis.ch/kyber"
 	"go.dedis.ch/kyber/pairing/bn256"
 	rabin "go.dedis.ch/kyber/share/dkg/rabin"
 	"go.dedis.ch/kyber/share/vss/rabin"
+	"sync"
 
 	"bytes"
 	"encoding/gob"
@@ -55,9 +57,10 @@ type DKG interface {
 	ProcessReconstructCommits() error
 }
 
-func NewDkg(streamer Streamer, suite *bn256.Suite, numOfNodes, threshold int) *DKGInstance {
+func NewDkg(srv Server, signerIdx int, suite *bn256.Suite, numOfNodes, threshold int) *DKGInstance {
 	return &DKGInstance{
-		Streamer:   streamer,
+		Server:     srv,
+		SignerIdx:  signerIdx,
 		Suite:      suite,
 		NumOfNodes: numOfNodes,
 		Treshold:   threshold,
@@ -69,6 +72,8 @@ func NewDkg(streamer Streamer, suite *bn256.Suite, numOfNodes, threshold int) *D
 
 type DKGInstance struct {
 	Streamer   Streamer
+	Server     Server
+	SignerIdx  int
 	NumOfNodes int
 	Treshold   int
 	Suite      *bn256.Suite
@@ -187,8 +192,12 @@ func (i *DKGInstance) ProcessDeals() error {
 
 			resp, err := i.dkgRabin.ProcessDeal(dd)
 			if err != nil {
+				fmt.Println("*** 1", deal)
+				fmt.Println("*** 2", dd.Index, *dd.Deal)
 				return err
 			}
+			fmt.Println("*** 3", dd.Index, *dd.Deal)
+			fmt.Println("*** 4", deal)
 			respList = append(respList, resp)
 			numOfDeals--
 			fmt.Println("+++", i.Index, numOfDeals)
@@ -223,10 +232,26 @@ func (i *DKGInstance) ProcessReconstructCommits() error {
 	return nil
 }
 
+var signers []*feed.GenericSigner
+var signersLock = new(sync.Mutex)
+
 func (i *DKGInstance) Run() error {
+	signersLock.Lock()
+	if signers == nil {
+		fmt.Println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+		signers, _ = newTestSigners(i.NumOfNodes)
+	}
+	signersLock.Unlock()
+
+	var closerFunc func()
+
 	for {
 		switch i.State {
 		case STATE_PUBKEY_SEND:
+			fmt.Println("xxx 1", i.SignerIdx, i.Index)
+			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx,"pubkey")
+			time.Sleep(time.Second)
+
 			err := i.SendPubkey()
 			if err != nil {
 				//todo errcheck
@@ -242,8 +267,14 @@ func (i *DKGInstance) Run() error {
 				i.moveToState(STATE_PUBKEY_SEND)
 				panic(err)
 			}
+
+			closerFunc()
 			i.moveToState(STATE_SEND_DEALS)
 		case STATE_SEND_DEALS:
+			fmt.Println("xxx 2", i.SignerIdx, i.Index)
+			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx,"deals")
+			time.Sleep(time.Second)
+
 			err := i.SendDeals()
 			if err != nil {
 				//todo errcheck
@@ -258,6 +289,8 @@ func (i *DKGInstance) Run() error {
 				i.moveToState(STATE_PUBKEY_SEND)
 				panic(err)
 			}
+
+			closerFunc()
 			i.moveToState(STATE_PROCESS_SEND_RESPONSES)
 
 		default:
@@ -270,4 +303,5 @@ func (i *DKGInstance) Run() error {
 func (i *DKGInstance) moveToState(state int) {
 	fmt.Println("Move form", i.State, "to", state)
 	i.State = state
+	time.Sleep(2*time.Second)
 }
