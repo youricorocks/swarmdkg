@@ -76,28 +76,28 @@ type DKG interface {
 	ProcessReconstructCommits() error
 }
 
-func NewDkg(srv Server, signerIdx int, suite *bn256.Suite, numOfNodes, threshold int) *DKGInstance {
+func NewDkg(streamGenerator func(topic string) (stream Streamer, closer func()), signerIdx int, suite *bn256.Suite, numOfNodes, threshold int) *DKGInstance {
 	return &DKGInstance{
-		Server:     srv,
-		SignerIdx:  signerIdx,
-		Suite:      suite,
-		NumOfNodes: numOfNodes,
-		Treshold:   threshold,
-		State:      STATE_PUBKEY_SEND,
+		StreamGenerator: streamGenerator,
+		SignerIdx:       signerIdx,
+		Suite:           suite,
+		NumOfNodes:      numOfNodes,
+		Treshold:        threshold,
+		State:           STATE_PUBKEY_SEND,
 
 		pubkeys: make([]kyber.Point, 0, numOfNodes),
 	}
 }
 
 type DKGInstance struct {
-	Streamer   Streamer
-	Server     Server
-	SignerIdx  int
-	NumOfNodes int
-	Treshold   int
-	Suite      *bn256.Suite
-	State      int
-	KeyPair    *key.Pair
+	Streamer        Streamer
+	StreamGenerator func(topic string) (stream Streamer, closer func())
+	SignerIdx       int
+	NumOfNodes      int
+	Treshold        int
+	Suite           *bn256.Suite
+	State           int
+	KeyPair         *key.Pair
 
 	roundID   int
 	pubkeys   []kyber.Point
@@ -151,7 +151,7 @@ func (i *DKGInstance) ReceivePubkeys() error {
 			i.pubkeys = i.pubkeys[:0]
 			return timeoutErr
 		}
-		if len(i.pubkeys) == i.NumOfNodes*20 {
+		if len(i.pubkeys) == i.NumOfNodes {
 			i.pubkeys = uniquePublicKeys(i.pubkeys)
 
 			sort.Slice(i.pubkeys, func(k, m int) bool {
@@ -561,7 +561,7 @@ func (i *DKGInstance) Run() error {
 	for {
 		switch i.State {
 		case STATE_PUBKEY_SEND:
-			i.Streamer, _ = GenerateStream(i.Server, signers, i.SignerIdx, "pubkey")
+			i.Streamer, _ = i.StreamGenerator("pubkey")
 			time.Sleep(2 * time.Second)
 
 			err := i.SendPubkey()
@@ -582,7 +582,7 @@ func (i *DKGInstance) Run() error {
 
 			i.moveToState(STATE_SEND_DEALS)
 		case STATE_SEND_DEALS:
-			i.Streamer, _ = GenerateStream(i.Server, signers, i.SignerIdx, "deals")
+			i.Streamer, _ = i.StreamGenerator("deals")
 			time.Sleep(2 * time.Second)
 
 			err := i.SendDeals()
@@ -602,7 +602,7 @@ func (i *DKGInstance) Run() error {
 
 			i.moveToState(STATE_SEND_RESPONSES)
 		case STATE_SEND_RESPONSES:
-			i.Streamer, _ = GenerateStream(i.Server, signers, i.SignerIdx, "responses")
+			i.Streamer, _ = i.StreamGenerator("responses")
 			time.Sleep(2 * time.Second)
 
 			err := i.SendResponses()
@@ -632,7 +632,7 @@ func (i *DKGInstance) Run() error {
 
 			i.moveToState(STATE_PROCESS_Commits)
 		case STATE_PROCESS_Commits:
-			i.Streamer, _ = GenerateStream(i.Server, signers, i.SignerIdx, "commits")
+			i.Streamer, _ = i.StreamGenerator("commits")
 			time.Sleep(2 * time.Second)
 
 			err := i.ProcessCommits()
