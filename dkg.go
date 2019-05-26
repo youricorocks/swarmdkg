@@ -3,6 +3,7 @@ package swarmdkg
 import (
 	"bytes"
 	"encoding/gob"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -21,7 +22,7 @@ import (
 )
 
 const (
-	TIMEOUT_FOR_STATE = 10 * time.Second
+	TIMEOUT_FOR_STATE = 20 * time.Second
 
 	STATE_PUBKEY_SEND = iota
 	STATE_PUBKEY_RECEIVE
@@ -37,6 +38,8 @@ type DKGMessage struct {
 	From    int
 	ToIndex int
 	Data    []byte
+
+	ReqID int
 }
 
 type Streamer interface {
@@ -82,19 +85,31 @@ type DKGInstance struct {
 	State      int
 	KeyPair    *key.Pair
 
+
+	roundID int
 	pubkeys  []kyber.Point
 	Index    int
 	DkgRabin *rabin.DistKeyGenerator
 }
 
+func (i *DKGInstance)round(k int)  {
+	i.roundID=k
+}
 func (i *DKGInstance) SendPubkey() error {
 	i.KeyPair = key.NewKeyPair(i.Suite)
 	publicKeyBin, err := i.KeyPair.Public.MarshalBinary()
 	if err != nil {
 		return err
 	}
-	i.Streamer.Broadcast(publicKeyBin)
-	time.Sleep(2 * time.Second)
+	b, err := json.Marshal(DKGMessage{
+		Data:publicKeyBin,
+		ReqID:i.roundID,
+	})
+	if err != nil {
+		return err
+	}
+	i.Streamer.Broadcast(b)
+	time.Sleep(2*time.Second)
 	return nil
 }
 
@@ -103,8 +118,13 @@ func (i *DKGInstance) ReceivePubkeys() error {
 	for {
 		select {
 		case key := <-ch:
+			msg:=DKGMessage{}
+			json.Unmarshal(key, &msg)
+			if msg.ReqID!=i.roundID {
+				continue
+			}
 			point := i.Suite.Point()
-			err := point.UnmarshalBinary(key)
+			err := point.UnmarshalBinary(msg.Data)
 			if err != nil {
 				i.pubkeys = i.pubkeys[:0]
 				return err
@@ -159,16 +179,15 @@ func (i *DKGInstance) SendDeals() error {
 			Data:    b.Bytes(),
 			ToIndex: toIndex,
 			From:    i.Index,
+			ReqID:i.roundID,
 		}
-
-		b = bytes.NewBuffer(nil)
-		err = gob.NewEncoder(b).Encode(msg)
+		msgBin, err := json.Marshal(msg)
 		if err != nil {
 			return err
 		}
 
-		i.Streamer.Broadcast(b.Bytes())
-		time.Sleep(2 * time.Second)
+		i.Streamer.Broadcast(msgBin)
+		time.Sleep(2*time.Second)
 	}
 	return nil
 }
@@ -176,20 +195,30 @@ func (i *DKGInstance) ProcessDeals() error {
 	ch := i.Streamer.Read()
 	numOfDeals := i.NumOfNodes - 1
 	respList := make([]*rabin.Response, 0)
+	m:=make(map[int]struct {})
 
 	for {
 		select {
 		case deal := <-ch:
 			var msg DKGMessage
-			dec := gob.NewDecoder(bytes.NewBuffer(deal))
-			err := dec.Decode(&msg)
+			fmt.Println(i.Index, "** deal - ", string(deal))
+			err := json.Unmarshal(deal, &msg)
 			if err != nil {
-				fmt.Println("fuck 1")
+				fmt.Println(i.Index, "0 ------- err", err)
 				return err
+			}
+			if msg.ReqID!=i.roundID {
+				fmt.Println("fuck round", deal)
+				continue
 			}
 			if msg.ToIndex != i.Index {
 				continue
 			}
+			_,ok:=m[msg.From]
+			if ok {
+				continue
+			}
+			m[msg.From]= struct{}{}
 
 			dd := &rabin.Deal{
 				Deal: &vss.EncryptedDeal{
@@ -197,10 +226,10 @@ func (i *DKGInstance) ProcessDeals() error {
 				},
 			}
 
-			dec = gob.NewDecoder(bytes.NewBuffer(msg.Data))
+			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
 			err = dec.Decode(dd)
 			if err != nil {
-				fmt.Println("fuck 2")
+				fmt.Println(i.Index, "1 ------- err", err)
 				return err
 			}
 
