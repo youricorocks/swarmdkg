@@ -22,6 +22,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/swarm/api"
 	"github.com/ethereum/go-ethereum/swarm/storage"
@@ -73,9 +74,8 @@ func NewTestSwarmServer(t *testing.T, serverFunc func(*api.API) TestServer, reso
 			os.RemoveAll(dir)
 			os.RemoveAll(feedsDir)
 		},
-		CurrentTime: 42,
 	}
-	feed.TimestampProvider = tss
+	//feed.TimestampProvider = tss
 	return tss
 }
 
@@ -93,5 +93,5 @@ func (t *TestSwarmServer) Close() {
 }
 
 func (t *TestSwarmServer) Now() feed.Timestamp {
-	return feed.Timestamp{Time: t.CurrentTime}
+	return feed.Timestamp{Time: uint64(time.Now().Unix())}
 }

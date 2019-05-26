@@ -2,17 +2,18 @@ package swarmdkg
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/swarm/api"
 	"github.com/ethereum/go-ethereum/swarm/api/http"
 	"github.com/ethereum/go-ethereum/swarm/storage/feed"
 	"github.com/ethereum/go-ethereum/swarm/testutil"
 	"go.dedis.ch/kyber/pairing/bn256"
+	"strconv"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
+	"math/rand"
 )
 
 // Test Swarm feeds using the raw update methods
@@ -162,14 +163,21 @@ func TestBzzStreamBroadcastGetManyTimes(t *testing.T) {
 			updateData = append(updateData, testutil.RandomBytes(i+idx, 20+i+idx))
 		}
 
-		for i, stream := range streams {
-			stream.Broadcast(updateData[i])
+		wg := sync.WaitGroup{}
+		wg.Add(len(streams))
+		for i := range streams {
+			i := i
+			go func() {
+				streams[i].Broadcast(updateData[i])
+				wg.Done()
+			}()
 		}
+		wg.Wait()
 
 		//wait for a broadcast
-		time.Sleep(1 * time.Second)
+		time.Sleep(2 * time.Second)
 
-		wg := sync.WaitGroup{}
+		wg = sync.WaitGroup{}
 		for i := range streams {
 			wg.Add(1)
 
@@ -187,8 +195,8 @@ func TestBzzStreamBroadcastGetManyTimes(t *testing.T) {
 							}
 						}
 						if !isWaited {
-							t.Fatal("stream got unexpected value", i, msg, updateData)
-							return
+							fmt.Println("stream got unexpected value", i, msg, updateData)
+							continue
 						}
 
 						count++
@@ -211,22 +219,78 @@ func TestBzzStreamBroadcastGetManyTimes(t *testing.T) {
 	fmt.Println("done")
 }
 
-var counter = new(int64)
+func TestBzzStreamBroadcastGetManyTimesManyStreams(t *testing.T) {
+	const numUsers = 5
 
-func init() {
-	*counter = 48879 //hex 'beef'
-}
+	for streamCount := 0; streamCount < 2; streamCount++ {
+		streams, closerFunc := getStreams(t, numUsers, "some-topic"+strconv.Itoa(streamCount))
 
-func newTestSigner() (*feed.GenericSigner, error) {
-	tailBytes := fmt.Sprintf("%04x", atomic.AddInt64(counter, 1)-1)
+		for idx := 0; idx < 3; idx++ {
+			var updateData [][]byte
+			for i := 0; i < numUsers; i++ {
+				updateData = append(updateData, testutil.RandomBytes(i+idx+streamCount, 20+i+idx))
+			}
 
-	privKey, err := crypto.HexToECDSA("deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdead" + tailBytes)
-	if err != nil {
-		return nil, err
+			wg := sync.WaitGroup{}
+			wg.Add(len(streams))
+			for i := range streams {
+				i := i
+				go func() {
+					streams[i].Broadcast(updateData[i])
+					wg.Done()
+				}()
+			}
+			wg.Wait()
+
+			//wait for a broadcast
+			time.Sleep(2 * time.Second)
+
+			wg = sync.WaitGroup{}
+			for i := range streams {
+				wg.Add(1)
+
+				go func(i int) {
+					count := 0
+					defer wg.Done()
+
+					for {
+						select {
+						case msg := <-streams[i].Read():
+							isWaited := false
+							for _, data := range updateData {
+								if bytes.Equal(msg, data) {
+									isWaited = true
+								}
+							}
+							if !isWaited {
+								fmt.Println("stream got unexpected value", i, msg, updateData)
+								continue
+							}
+
+							count++
+							if count == len(updateData) {
+								// successful case
+								fmt.Println("successful case")
+								return
+							}
+						case <-time.After(5 * time.Second):
+							fmt.Println("stream timeouted with", i, count)
+							t.Fatal("stream timeouted with", i, count)
+							return
+						}
+					}
+				}(i)
+			}
+			wg.Wait()
+		}
+		closerFunc()
+		fmt.Println("done stream")
 	}
-	return feed.NewGenericSigner(privKey), nil
+
+	fmt.Println("done")
 }
 
+/*
 func TestMockDKG(t *testing.T) {
 	numOfDKGNodes := 4
 	threshold := 3
@@ -246,20 +310,28 @@ func TestMockDKG(t *testing.T) {
 	}
 	wg.Wait()
 }
+*/
 
 func TestDKG(t *testing.T) {
 	numOfDKGNodes := 4
 	threshold := 3
 
-	streams, closerFunc := getStreams(t, numOfDKGNodes, "dkg1")
-	defer closerFunc()
-
+	var signers []*feed.GenericSigner
+	for idx := 0; idx < numOfDKGNodes; idx++ {
+		s, _ := newTestSigner()
+		signers = append(signers, s)
+	}
+	roundID:=rand.Int()
 	wg := sync.WaitGroup{}
 	wg.Add(numOfDKGNodes)
+	srv := GetTestServer()
+	var dkgs []*DKGInstance
 	for i := 0; i < numOfDKGNodes; i++ {
 		localI := i
 		go func() {
-			dkg := NewDkg(streams[localI], bn256.NewSuiteG2(), numOfDKGNodes, threshold)
+			dkg := NewDkg(srv, localI, bn256.NewSuiteG2(), numOfDKGNodes, threshold)
+			dkg.round(roundID)
+			dkgs = append(dkgs, dkg)
 			err := dkg.Run()
 			if err != nil {
 				t.Log(err)
@@ -268,6 +340,68 @@ func TestDKG(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+
+	for i := 0; i < numOfDKGNodes; i++ {
+		localI := i
+		go func() {
+			dkg := dkgs[localI]
+
+			verifier, err := dkg.GetVerifier()
+			if err != nil {
+				t.Log(err)
+			}
+
+			randomRound := 0
+			previousRandom := []byte("some initial vector")
+			for {
+				stream, closerFunc := GenerateStream(dkg.Server, signers, dkg.SignerIdx, "random"+strconv.Itoa(randomRound))
+				time.Sleep(2*time.Second)
+
+				mySign, err := verifier.Sign(previousRandom)
+				if err != nil {
+					fmt.Println("+++ random 1", err)
+				}
+
+				stream.Broadcast(mySign)
+
+				signsCache := make(map[string]struct{})
+
+				got := 0
+				var signs [][]byte
+				for msg := range stream.Read() {
+					if _, ok := signsCache[hex.EncodeToString(msg)]; ok {
+						continue
+					}
+					signsCache[hex.EncodeToString(msg)] = struct{}{}
+
+					err = verifier.VerifyRandomShare(previousRandom, msg)
+					if err != nil {
+						fmt.Println("+++ random 2", err)
+					} else {
+						signs = append(signs, msg)
+						got++
+					}
+
+					if got == numOfDKGNodes {
+						break
+					}
+				}
+
+				newRandom, err := verifier.Recover(previousRandom, signs)
+				if err != nil {
+					fmt.Println("+++ random 3", err)
+				}
+
+				fmt.Printf("DONE Random round %d - random %s\n", randomRound, hex.EncodeToString(newRandom))
+
+				closerFunc()
+				randomRound++
+				previousRandom = newRandom
+			}
+		}()
+	}
+
+	time.Sleep(10*time.Minute)
 }
 
 func getStreams(t *testing.T, numUsers int, topic string) (streams []*Stream, closer func()) {
@@ -304,7 +438,7 @@ func getStreams(t *testing.T, numUsers int, topic string) (streams []*Stream, cl
 			closeFunc()
 		}
 
-		fmt.Println("*** Server is closed ***")
+		fmt.Println("*** Stream is closed ***")
 		srv.Close()
 	}
 
