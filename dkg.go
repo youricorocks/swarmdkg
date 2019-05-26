@@ -458,9 +458,11 @@ func (i *DKGInstance) ProcessCommits() error {
 	return nil
 }
 func (i *DKGInstance) ProcessComplaints() error {
+	//skipped for MVP
 	return nil
 }
 func (i *DKGInstance) ProcessReconstructCommits() error {
+	//skipped for MVP
 	return nil
 }
 
@@ -533,9 +535,26 @@ func (i *DKGInstance) Run() error {
 				panic(err)
 			}
 			i.moveToState(STATE_PROCESS_Complaints)
+		case STATE_PROCESS_Complaints:
+			err := i.ProcessComplaints()
+			if err != nil {
+				//todo errcheck
+				i.moveToState(STATE_PUBKEY_SEND)
+				panic(err)
+			}
+			i.moveToState(STATE_PROCESS_ReconstructCommits)
+		case STATE_PROCESS_ReconstructCommits:
+			err := i.ProcessComplaints()
+			if err != nil {
+				//todo errcheck
+				i.moveToState(STATE_PUBKEY_SEND)
+				panic(err)
+			}
+			fmt.Println("DKG finished:", i.dkgRabin.Finished())
+			return nil
 
 		default:
-			fmt.Println("default Exit")
+
 			return errors.New("unknown state")
 		}
 	}
