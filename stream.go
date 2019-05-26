@@ -30,7 +30,7 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 		close:    make(chan struct{}),
 	}
 
-	timeCounter := uint64(time.Now().Unix())-10
+	timeCounter := uint64(time.Now().Unix()) - 10
 
 	go func() {
 		//fixme I'm not very sure could it skip a few updates or not
@@ -52,7 +52,7 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 				wg.Add(func() error {
 					msg, err = feed.Get(timeCounter)
 					if err != nil {
-						fmt.Println("Error while reading feed", err)
+						//fmt.Println("Error while reading feed", err)
 						return nil
 					}
 
@@ -70,7 +70,7 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 
 					s.cache[hex.EncodeToString(msg)] = struct{}{}
 					s.Messages <- msg
-					fmt.Println("GET FROM FEED", feed.User.String(), len(s.Messages), feed.Topic, msg)
+					//fmt.Println("GET FROM FEED", feed.User.String(), len(s.Messages), feed.Topic, msg)
 
 					return nil
 				})
@@ -129,7 +129,7 @@ func GenerateStreams(srv Server, signers []*feed.GenericSigner, topic string) (s
 			closeFunc()
 		}
 
-		fmt.Println("*** Server is closed ***")
+		//fmt.Println("*** Server is closed ***")
 		//srv.Close()
 	}
 
@@ -156,7 +156,7 @@ func GenerateStream(srv Server, signers []*feed.GenericSigner, signerIdx int, to
 			closeFunc()
 		}
 
-		fmt.Println("*** Server is closed ***")
+		//fmt.Println("*** Server is closed ***")
 		//srv.Close()
 	}
 

@@ -72,7 +72,7 @@ func (f *Feed) Get(timestamp uint64) ([]byte, error) {
 		return nil, fmt.Errorf("get feed returned %v", statusCode)
 	}
 
-	fmt.Println("get from feed", f.User.String(), topic.Hex(), timestamp, res)
+	//fmt.Println("get from feed", f.User.String(), topic.Hex(), timestamp, res)
 	return res, nil
 }
 
