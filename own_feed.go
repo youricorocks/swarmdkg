@@ -49,7 +49,6 @@ func (own *MyFeed) Broadcast(msg []byte) error {
 
 		own.manifestHash = manifestHash.Hex()
 		own.counter++
-		fmt.Println("broadcast first", own.User.String(), own.Topic, own.counter, own.manifestHash, msg)
 
 		own.Unlock()
 		return nil
@@ -85,7 +84,6 @@ func (own *MyFeed) Broadcast(msg []byte) error {
 	// update data with good query parameters:
 	testUrl.RawQuery = urlQuery.Encode()
 
-	fmt.Println("=== post", testUrl.String())
 	resp, err := http.Post(testUrl.String(), "application/octet-stream", bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -98,7 +96,6 @@ func (own *MyFeed) Broadcast(msg []byte) error {
 
 	own.Lock()
 	own.counter++
-	fmt.Println("broadcast", own.counter, own.User.String(), own.Topic, own.manifestHash, msg)
 	own.Unlock()
 	return nil
 }
@@ -127,7 +124,6 @@ func (own *MyFeed) firstUpdate(msg []byte) (*storage.Address, error) {
 	urlQuery.Set("manifest", "1")                // indicate we want a manifest back
 	testUrl.RawQuery = urlQuery.Encode()
 
-	fmt.Println("=== post first", testUrl.String())
 	resp, err := http.Post(testUrl.String(), "application/octet-stream", bytes.NewReader(body))
 	if err != nil {
 		return nil, err

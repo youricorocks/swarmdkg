@@ -30,14 +30,14 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 		close:    make(chan struct{}),
 	}
 
+	timeCounter := uint64(time.Now().Unix())-10
+
 	go func() {
-		timer := time.NewTicker(1 * time.Second)
+		//fixme I'm not very sure could it skip a few updates or not
+		timer := time.NewTicker(100 * time.Millisecond)
 		defer timer.Stop()
 
-		t := time.Now()
 		for {
-			now := uint64(t.Unix())
-
 			msg, err := s.Own.Read()
 			if err != nil {
 				fmt.Println("Error while reading own feed", err)
@@ -50,8 +50,7 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 				feed := feed
 
 				wg.Add(func() error {
-					//fixme I'm not very sure could it skip a few updates or not
-					msg, err = feed.Get(now)
+					msg, err = feed.Get(timeCounter)
 					if err != nil {
 						fmt.Println("Error while reading feed", err)
 						return nil
@@ -81,8 +80,8 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 			select {
 			case <-s.close:
 				return
-			case t = <-timer.C:
-				//nothing to do
+			case <-timer.C:
+				timeCounter++
 			}
 		}
 	}()
@@ -92,6 +91,7 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 
 func (s *Stream) Broadcast(msg []byte) {
 	s.Own.Broadcast(msg)
+	time.Sleep(2 * time.Second)
 }
 
 func (s *Stream) Read() chan []byte {

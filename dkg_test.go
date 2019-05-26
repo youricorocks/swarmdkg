@@ -431,7 +431,7 @@ func getStreams(t *testing.T, numUsers int, topic string) (streams []*Stream, cl
 			closeFunc()
 		}
 
-		fmt.Println("*** Server is closed ***")
+		fmt.Println("*** Stream is closed ***")
 		srv.Close()
 	}
 

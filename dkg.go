@@ -151,7 +151,7 @@ func (i *DKGInstance) ReceivePubkeys() error {
 			i.pubkeys = i.pubkeys[:0]
 			return timeoutErr
 		}
-		if len(i.pubkeys) == i.NumOfNodes*2 {
+		if len(i.pubkeys) == i.NumOfNodes*20 {
 			i.pubkeys = uniquePublicKeys(i.pubkeys)
 
 			sort.Slice(i.pubkeys, func(k, m int) bool {
@@ -159,13 +159,9 @@ func (i *DKGInstance) ReceivePubkeys() error {
 				d2, _ := i.pubkeys[m].MarshalBinary()
 				res := bytes.Compare(d1, d2)
 
-				if res == 0 {
-					fmt.Println("ERROR!", i.SignerIdx, i.pubkeys[k].String(), i.pubkeys[m].String())
-				}
 				return res > 0
 			})
 
-			fmt.Println("$$$$$$$$$$$$$$$$$$$$$$$$$", i.SignerIdx, len(i.pubkeys), i.pubkeys)
 			break
 		}
 	}
@@ -234,7 +230,6 @@ func (i *DKGInstance) SendDeals() error {
 		}
 
 		i.Streamer.Broadcast(msgBin)
-		time.Sleep(2 * time.Second)
 	}
 	return nil
 }
@@ -242,11 +237,17 @@ func (i *DKGInstance) ProcessDeals() error {
 	ch := i.Streamer.Read()
 	numOfDeals := i.NumOfNodes - 1
 	respList := make([]*rabin.Response, 0)
-	m := make(map[int]struct{})
+	dealsCache := make(map[string]struct{})
 
 	for {
 		select {
 		case deal := <-ch:
+			if _, ok := dealsCache[hex.EncodeToString(deal)]; ok {
+				fmt.Println("old deal")
+				continue
+			}
+			dealsCache[hex.EncodeToString(deal)] = struct{}{}
+
 			var msg DKGMessage
 			fmt.Println(i.Index, "** deal - ", string(deal))
 			err := json.Unmarshal(deal, &msg)
@@ -261,11 +262,6 @@ func (i *DKGInstance) ProcessDeals() error {
 			if msg.ToIndex != i.Index {
 				continue
 			}
-			_, ok := m[msg.From]
-			if ok {
-				continue
-			}
-			m[msg.From] = struct{}{}
 
 			dd := &rabin.Deal{
 				Deal: &vss.EncryptedDeal{
@@ -289,7 +285,7 @@ func (i *DKGInstance) ProcessDeals() error {
 			}
 			i.responses = append(i.responses, resp)
 			fmt.Println("*** 3", msg.From, msg.ToIndex, dd.Index, *dd.Deal)
-			fmt.Println("*** 4", deal)
+			fmt.Println("*** 4", numOfDeals, deal)
 			respList = append(respList, resp)
 			numOfDeals--
 		case <-time.After(TIMEOUT_FOR_STATE):
@@ -557,9 +553,7 @@ var signersLock = new(sync.Mutex)
 func (i *DKGInstance) Run() error {
 	signersLock.Lock()
 	if signers == nil {
-		var err error
-		signers, err = newTestSigners(i.NumOfNodes)
-		fmt.Println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", err)
+		signers, _ = newTestSigners(i.NumOfNodes)
 	}
 	signersLock.Unlock()
 
@@ -569,7 +563,6 @@ func (i *DKGInstance) Run() error {
 		switch i.State {
 		case STATE_PUBKEY_SEND:
 			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx, "pubkey")
-			fmt.Println("xxx 1", i.SignerIdx, i.Index, i.Streamer)
 			time.Sleep(2 * time.Second)
 
 			err := i.SendPubkey()
@@ -592,7 +585,6 @@ func (i *DKGInstance) Run() error {
 			i.moveToState(STATE_SEND_DEALS)
 		case STATE_SEND_DEALS:
 			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx, "deals")
-			fmt.Println("xxx 2", i.SignerIdx, i.Index, i.Streamer)
 			time.Sleep(2 * time.Second)
 
 			err := i.SendDeals()
@@ -614,7 +606,6 @@ func (i *DKGInstance) Run() error {
 			i.moveToState(STATE_SEND_RESPONSES)
 		case STATE_SEND_RESPONSES:
 			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx, "responses")
-			fmt.Println("xxx 3", i.SignerIdx, i.Index, i.Streamer)
 			time.Sleep(2 * time.Second)
 
 			err := i.SendResponses()
@@ -646,7 +637,6 @@ func (i *DKGInstance) Run() error {
 			i.moveToState(STATE_PROCESS_Commits)
 		case STATE_PROCESS_Commits:
 			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx, "commits")
-			fmt.Println("xxx 4", i.SignerIdx, i.Index, i.Streamer)
 			time.Sleep(2 * time.Second)
 
 			err := i.ProcessCommits()
