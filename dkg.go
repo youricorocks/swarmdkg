@@ -136,6 +136,7 @@ func (i *DKGInstance) ReceivePubkeys() error {
 			msg := DKGMessage{}
 			json.Unmarshal(k, &msg)
 			if msg.ReqID != i.roundID {
+				fmt.Println("get keys 0")
 				continue
 			}
 
@@ -143,6 +144,7 @@ func (i *DKGInstance) ReceivePubkeys() error {
 			err := point.UnmarshalBinary(msg.Data)
 			if err != nil {
 				i.pubkeys = i.pubkeys[:0]
+				fmt.Println("get keys 1", err)
 				return err
 			}
 
@@ -151,9 +153,10 @@ func (i *DKGInstance) ReceivePubkeys() error {
 			i.pubkeys = i.pubkeys[:0]
 			return timeoutErr
 		}
-		if len(i.pubkeys) == i.NumOfNodes*20 {
-			i.pubkeys = uniquePublicKeys(i.pubkeys)
 
+		i.pubkeys = uniquePublicKeys(i.pubkeys)
+		fmt.Println("user", i.SignerIdx, "got", len(i.pubkeys))
+		if len(i.pubkeys) == i.NumOfNodes {
 			sort.Slice(i.pubkeys, func(k, m int) bool {
 				d1, _ := i.pubkeys[k].MarshalBinary()
 				d2, _ := i.pubkeys[m].MarshalBinary()
@@ -161,7 +164,6 @@ func (i *DKGInstance) ReceivePubkeys() error {
 
 				return res > 0
 			})
-
 			break
 		}
 	}
@@ -185,7 +187,11 @@ func uniquePublicKeys(pubkeys []kyber.Point) []kyber.Point {
 
 func (i *DKGInstance) SendDeals() error {
 	sort.Slice(i.pubkeys, func(k, m int) bool {
-		return i.pubkeys[k].String() > i.pubkeys[m].String()
+		d1, _ := i.pubkeys[k].MarshalBinary()
+		d2, _ := i.pubkeys[m].MarshalBinary()
+		res := bytes.Compare(d1, d2)
+
+		return res > 0
 	})
 
 	for j, p := range i.pubkeys {
@@ -234,7 +240,6 @@ func (i *DKGInstance) SendDeals() error {
 func (i *DKGInstance) ProcessDeals() error {
 	ch := i.Streamer.Read()
 	numOfDeals := i.NumOfNodes - 1
-	respList := make([]*rabin.Response, 0)
 	dealsCache := make(map[string]struct{})
 
 	for {
@@ -248,13 +253,12 @@ func (i *DKGInstance) ProcessDeals() error {
 			var msg DKGMessage
 			err := json.Unmarshal(deal, &msg)
 			if err != nil {
+				fmt.Println("process deal 1", err)
 				ch <- deal
-				return err
-			}
-			if msg.ReqID != i.roundID {
 				continue
 			}
 			if msg.ToIndex != i.Index {
+				fmt.Println("process deal 3")
 				continue
 			}
 
@@ -267,18 +271,21 @@ func (i *DKGInstance) ProcessDeals() error {
 			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
 			err = dec.Decode(dd)
 			if err != nil {
+				fmt.Println("process deal 4", err)
 				ch <- deal
-				return err
+				continue
 			}
 
 			resp, err := i.DkgRabin.ProcessDeal(dd)
 			if err != nil {
+				fmt.Println("process deal 5", err)
 				ch <- deal
-				return err
+				continue
 			}
 			i.responses = append(i.responses, resp)
-			respList = append(respList, resp)
+
 			numOfDeals--
+			fmt.Println("process deal status", i.SignerIdx, numOfDeals)
 		case <-time.After(TIMEOUT_FOR_STATE):
 			i.pubkeys = i.pubkeys[:0]
 			return timeoutErr
@@ -351,6 +358,7 @@ func (i *DKGInstance) ProcessResponses() error {
 
 			just = append(just, j)
 			numOfResponses--
+			fmt.Println("stage 6 need", i.SignerIdx, numOfResponses)
 
 		case <-time.After(TIMEOUT_FOR_STATE):
 			i.pubkeys = i.pubkeys[:0]
@@ -603,6 +611,7 @@ func (i *DKGInstance) Run() error {
 				panic(err)
 			}
 
+			time.Sleep(2 * time.Second)
 			i.moveToState(STATE_SEND_RESPONSES)
 		case STATE_SEND_RESPONSES:
 			i.Streamer, _ = GenerateStream(i.Server, signers, i.SignerIdx, "responses")
@@ -646,7 +655,7 @@ func (i *DKGInstance) Run() error {
 				panic(err)
 			}
 
-			time.Sleep(5 * time.Second)
+			time.Sleep(10 * time.Second)
 			i.moveToState(STATE_PROCESS_Complaints)
 		case STATE_PROCESS_Complaints:
 			err := i.ProcessComplaints()
@@ -676,7 +685,7 @@ func (i *DKGInstance) Run() error {
 }
 func (i *DKGInstance) moveToState(state int) {
 	i.State = state
-	fmt.Println("Everything is all right. we've just passed Distributed Key Generation stage", state, "of 9")
+	fmt.Println("Everything is all right. we've just passed Distributed Key Generation stage", state, "of 10")
 	fmt.Println("Please wait 30-60 secs at this stage. It's just a PoC, be patient")
 	time.Sleep(5 * time.Second)
 }

@@ -320,69 +320,76 @@ func TestDKG(t *testing.T) {
 			}
 			wg.Done()
 
-			go func() {
-				for {
-					// generate random stage
-					dkg := dkgs[localI]
+			for {
+				// generate random stage
+				dkg := dkgs[localI]
 
-					verifier, err := dkg.GetVerifier()
+				verifier, err := dkg.GetVerifier()
+				if err != nil {
+					time.Sleep(time.Second)
+					fmt.Println("+++++++++++++++++", err)
+					continue
+				}
+
+				randomRound := 0
+				isRoundChanged := true
+				previousRandom := []byte("some initial vector")
+				var stream *Stream
+				var closerFunc func()
+				for {
+					if isRoundChanged {
+						stream, closerFunc = GenerateStream(dkg.Server, signers, dkg.SignerIdx, "random"+strconv.Itoa(randomRound))
+						isRoundChanged = false
+					}
+					time.Sleep(2 * time.Second)
+
+					mySign, err := verifier.Sign(previousRandom)
 					if err != nil {
-						time.Sleep(time.Second)
+						time.Sleep(4 * time.Second)
+						fmt.Println("+++ random 1", err)
 						continue
 					}
 
-					randomRound := 0
-					previousRandom := []byte("some initial vector")
-					for {
-						stream, closerFunc := GenerateStream(dkg.Server, signers, dkg.SignerIdx, "random"+strconv.Itoa(randomRound))
-						time.Sleep(2 * time.Second)
+					stream.Broadcast(mySign)
 
-						mySign, err := verifier.Sign(previousRandom)
-						if err != nil {
-							//fmt.Println("+++ random 1", err)
+					signsCache := make(map[string]struct{})
+
+					got := 0
+					var signs [][]byte
+					for msg := range stream.Read() {
+						if _, ok := signsCache[hex.EncodeToString(msg)]; ok {
 							continue
 						}
+						signsCache[hex.EncodeToString(msg)] = struct{}{}
 
-						stream.Broadcast(mySign)
-
-						signsCache := make(map[string]struct{})
-
-						got := 0
-						var signs [][]byte
-						for msg := range stream.Read() {
-							if _, ok := signsCache[hex.EncodeToString(msg)]; ok {
-								continue
-							}
-							signsCache[hex.EncodeToString(msg)] = struct{}{}
-
-							err = verifier.VerifyRandomShare(previousRandom, msg)
-							if err != nil {
-								fmt.Println("+++ random 2", err)
-								continue
-							} else {
-								signs = append(signs, msg)
-								got++
-							}
-
-							if got == numOfDKGNodes {
-								break
-							}
-						}
-
-						newRandom, err := verifier.Recover(previousRandom, signs)
+						err = verifier.VerifyRandomShare(previousRandom, msg)
 						if err != nil {
-							fmt.Println("+++ random 3", err)
+							fmt.Println("+++ random 2", err)
 							continue
+						} else {
+							signs = append(signs, msg)
+							got++
 						}
 
-						fmt.Printf("DONE Random round %d - random %s\n", randomRound, hex.EncodeToString(newRandom))
-
-						closerFunc()
-						randomRound++
-						previousRandom = newRandom
+						if got == numOfDKGNodes {
+							break
+						}
 					}
+
+					newRandom, err := verifier.Recover(previousRandom, signs)
+					if err != nil {
+						fmt.Println("+++ random 3", err)
+						continue
+					}
+
+					fmt.Printf("DONE Random round %d - random %s\n", randomRound, hex.EncodeToString(newRandom))
+
+					closerFunc()
+					randomRound++
+					isRoundChanged = true
+					previousRandom = newRandom
 				}
-			}()
+			}
 		}()
 	}
 	wg.Wait()
