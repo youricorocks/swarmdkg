@@ -248,6 +248,7 @@ func (i *DKGInstance) ProcessDeals() error {
 			var msg DKGMessage
 			err := json.Unmarshal(deal, &msg)
 			if err != nil {
+				ch <- deal
 				return err
 			}
 			if msg.ReqID != i.roundID {
@@ -266,6 +267,7 @@ func (i *DKGInstance) ProcessDeals() error {
 			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
 			err = dec.Decode(dd)
 			if err != nil {
+				ch <- deal
 				return err
 			}
 
@@ -315,10 +317,16 @@ func (i *DKGInstance) ProcessResponses() error {
 	ch := i.Streamer.Read()
 	numOfResponses := (i.NumOfNodes - 1) * (i.NumOfNodes - 1)
 	just := make([]*rabin.Justification, 0)
+	responseCache := make(map[string]struct{})
 
 	for {
 		select {
 		case resp := <-ch:
+			if _, ok := responseCache[hex.EncodeToString(resp)]; ok {
+				continue
+			}
+			responseCache[hex.EncodeToString(resp)] = struct{}{}
+
 			var msg DKGMessage
 			err := json.Unmarshal(resp, &msg)
 			if err != nil {
@@ -333,6 +341,7 @@ func (i *DKGInstance) ProcessResponses() error {
 			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
 			err = dec.Decode(r)
 			if err != nil {
+				ch <- resp
 				return err
 			}
 
@@ -662,8 +671,9 @@ func (i *DKGInstance) Run() error {
 	return nil
 }
 func (i *DKGInstance) moveToState(state int) {
-	fmt.Println("Move form", i.State, "to", state)
 	i.State = state
+	fmt.Println("Everything is all right. we've just passed Distributed Key Generation stage", state, "of 9")
+	fmt.Println("Please wait 30-60 secs at this stage. It's just a PoC, be patient")
 	time.Sleep(2 * time.Second)
 }
 
