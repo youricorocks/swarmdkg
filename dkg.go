@@ -28,8 +28,19 @@ const (
 	STATE_PUBKEY_RECEIVE
 	STATE_SEND_DEALS
 	STATE_PROCESS_DEALS
-	STATE_PROCESS_SEND_RESPONSES
-	STATE_PROCESS_PROCESS_RESPONSES
+	STATE_SEND_RESPONSES
+	STATE_PROCESS_RESPONSES
+	STATE_PROCESS_JUSTIFICATIONS
+	STATE_PROCESS_Commits
+	STATE_PROCESS_Complaints
+	STATE_PROCESS_ReconstructCommits
+)
+const (
+	MESSAGE_DEAL = iota
+	MESSAGE_RESPONSE
+	MESSAGE_JUSTIFICATION
+	MESSAGE_SECRET_COMMITS
+	MESSAGE_COMPLAINS
 )
 
 var timeoutErr = errors.New("timeout")
@@ -37,6 +48,7 @@ var timeoutErr = errors.New("timeout")
 type DKGMessage struct {
 	From    int
 	ToIndex int
+	Type    int
 	Data    []byte
 
 	ReqID int
@@ -53,6 +65,7 @@ type DKG interface {
 	// Phase I
 	SendDeals() error
 	ProcessDeals() error
+	SendResponses() error
 	ProcessResponses() error
 	ProcessJustifications() error
 
@@ -85,11 +98,12 @@ type DKGInstance struct {
 	State      int
 	KeyPair    *key.Pair
 
-
-	roundID int
-	pubkeys  []kyber.Point
-	Index    int
-	DkgRabin *rabin.DistKeyGenerator
+	roundID   int
+	pubkeys   []kyber.Point
+	responses []*rabin.Response
+	complains []*rabin.ComplaintCommits
+	Index     int
+	DkgRabin  *rabin.DistKeyGenerator
 }
 
 func (i *DKGInstance)round(k int)  {
@@ -117,12 +131,13 @@ func (i *DKGInstance) ReceivePubkeys() error {
 	ch := i.Streamer.Read()
 	for {
 		select {
-		case key := <-ch:
+		case k := <-ch:
 			msg:=DKGMessage{}
-			json.Unmarshal(key, &msg)
+			json.Unmarshal(k, &msg)
 			if msg.ReqID!=i.roundID {
 				continue
 			}
+
 			point := i.Suite.Point()
 			err := point.UnmarshalBinary(msg.Data)
 			if err != nil {
@@ -179,7 +194,8 @@ func (i *DKGInstance) SendDeals() error {
 			Data:    b.Bytes(),
 			ToIndex: toIndex,
 			From:    i.Index,
-			ReqID:i.roundID,
+			Type:    MESSAGE_DEAL,
+			ReqID:   i.roundID,
 		}
 		msgBin, err := json.Marshal(msg)
 		if err != nil {
@@ -240,12 +256,11 @@ func (i *DKGInstance) ProcessDeals() error {
 				fmt.Println("fuck 3")
 				return err
 			}
+			i.responses = append(i.responses, resp)
 			fmt.Println("*** 3", msg.From, msg.ToIndex, dd.Index, *dd.Deal)
 			fmt.Println("*** 4", deal)
 			respList = append(respList, resp)
 			numOfDeals--
-			fmt.Println("+++", i.Index, numOfDeals)
-
 		case <-time.After(TIMEOUT_FOR_STATE):
 			i.pubkeys = i.pubkeys[:0]
 			return timeoutErr
@@ -258,21 +273,250 @@ func (i *DKGInstance) ProcessDeals() error {
 
 	return nil
 }
+func (i *DKGInstance) SendResponses() error {
+	for j := range i.responses {
+		buf := bytes.NewBuffer(nil)
+		err := gob.NewEncoder(buf).Encode(i.responses[j])
+		if err != nil {
+			return err
+		}
+
+		msg := DKGMessage{
+			From: i.Index,
+			Type: MESSAGE_RESPONSE,
+			Data: buf.Bytes(),
+		}
+
+		b, err := json.Marshal(&msg)
+		if err != nil {
+			return err
+		}
+		i.Streamer.Broadcast(b)
+	}
+	i.responses = i.responses[:0]
+	return nil
+}
 func (i *DKGInstance) ProcessResponses() error {
+	ch := i.Streamer.Read()
+	numOfResponses := (i.NumOfNodes - 1) * (i.NumOfNodes - 1)
+	just := make([]*rabin.Justification, 0)
+
+	for {
+		select {
+		case resp := <-ch:
+			var msg DKGMessage
+			err := json.Unmarshal(resp, &msg)
+			if err != nil {
+				return err
+			}
+
+			if msg.Type != MESSAGE_RESPONSE {
+				continue
+			}
+			r := &rabin.Response{}
+
+			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
+			err = dec.Decode(r)
+			if err != nil {
+				return err
+			}
+
+			if uint32(i.Index) == r.Response.Index {
+				continue
+			}
+			j, err := i.DkgRabin.ProcessResponse(r)
+			if err != nil {
+				return err
+			}
+
+			just = append(just, j)
+			numOfResponses--
+
+		case <-time.After(TIMEOUT_FOR_STATE):
+			i.pubkeys = i.pubkeys[:0]
+			return timeoutErr
+
+		}
+		if numOfResponses == 0 {
+			break
+		}
+	}
+	for j := range just {
+		var data []byte
+		if just[j] != nil {
+			buf := bytes.NewBuffer(nil)
+			err := gob.NewEncoder(buf).Encode(just[j])
+			if err != nil {
+				return err
+			}
+			data = buf.Bytes()
+		}
+
+		msg := DKGMessage{
+			From: i.Index,
+			Type: MESSAGE_JUSTIFICATION,
+			Data: data,
+		}
+
+		b, err := json.Marshal(&msg)
+		if err != nil {
+			return err
+		}
+		i.Streamer.Broadcast(b)
+	}
 	return nil
 }
 func (i *DKGInstance) ProcessJustifications() error {
+	ch := i.Streamer.Read()
+	numOfJustifications := (i.NumOfNodes - 1) * (i.NumOfNodes - 1) * i.NumOfNodes
+
+	for {
+		if numOfJustifications == 0 {
+			break
+		}
+
+		select {
+		case resp := <-ch:
+			var msg DKGMessage
+
+			err := json.Unmarshal(resp, &msg)
+			if err != nil {
+				return err
+			}
+
+			if msg.Type != MESSAGE_JUSTIFICATION {
+				continue
+			}
+
+			if len(msg.Data) == 0 {
+				numOfJustifications--
+				continue
+			}
+
+			r := &rabin.Justification{}
+			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
+			err = dec.Decode(r)
+			if err != nil {
+				return err
+			}
+			err = i.DkgRabin.ProcessJustification(r)
+			if err != nil {
+				return err
+			}
+			numOfJustifications--
+
+		case <-time.After(TIMEOUT_FOR_STATE):
+			i.pubkeys = i.pubkeys[:0]
+			return timeoutErr
+		}
+	}
+
 	return nil
 }
 
 // Phase II
 func (i *DKGInstance) ProcessCommits() error {
+	commits, err := i.DkgRabin.SecretCommits()
+	if err != nil {
+		return err
+	}
+	fmt.Println("sc len", len(commits.Commitments))
+
+	buf := bytes.NewBuffer(nil)
+	err = gob.NewEncoder(buf).Encode(commits)
+	if err != nil {
+		return err
+	}
+
+	msg := DKGMessage{
+		From: i.Index,
+		Type: MESSAGE_SECRET_COMMITS,
+		Data: buf.Bytes(),
+	}
+
+	b, err := json.Marshal(&msg)
+	if err != nil {
+		return err
+	}
+	i.Streamer.Broadcast(b)
+
+	ch := i.Streamer.Read()
+	numOfCommits := i.NumOfNodes - 1
+	for {
+		select {
+		case commit := <-ch:
+			var msg DKGMessage
+			err := json.Unmarshal(commit, &msg)
+			if err != nil {
+				return err
+			}
+			if msg.From == i.Index {
+				continue
+			}
+
+			if msg.Type != MESSAGE_SECRET_COMMITS {
+				continue
+			}
+			fmt.Println(i.Index, msg.From, string(commit))
+			commitData := &rabin.SecretCommits{}
+			for j := 0; j < len(i.DkgRabin.QUAL())-1; j++ {
+				commitData.Commitments = append(commitData.Commitments, i.Suite.Point())
+			}
+			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
+			err = dec.Decode(commitData)
+			if err != nil {
+				return err
+			}
+
+			complain, err := i.DkgRabin.ProcessSecretCommits(commitData)
+			if err != nil {
+				return err
+			}
+			i.complains = append(i.complains, complain)
+			numOfCommits--
+		case <-time.After(TIMEOUT_FOR_STATE):
+			i.pubkeys = i.pubkeys[:0]
+			return timeoutErr
+
+		}
+		if numOfCommits == 0 {
+			break
+		}
+	}
+
+	for j := range i.complains {
+		var data []byte
+		if i.complains[j] != nil {
+			buf := bytes.NewBuffer(nil)
+			err = gob.NewEncoder(buf).Encode(i.complains[j])
+			if err != nil {
+				return err
+			}
+			data = buf.Bytes()
+		}
+
+		msg := DKGMessage{
+			From: i.Index,
+			Type: MESSAGE_COMPLAINS,
+			Data: data,
+		}
+
+		b, err := json.Marshal(&msg)
+		if err != nil {
+			return err
+		}
+		i.Streamer.Broadcast(b)
+	}
+	i.complains = i.complains[:0]
+
 	return nil
 }
 func (i *DKGInstance) ProcessComplaints() error {
+	//skipped for MVP
 	return nil
 }
 func (i *DKGInstance) ProcessReconstructCommits() error {
+	//skipped for MVP
 	return nil
 }
 
@@ -336,10 +580,60 @@ func (i *DKGInstance) Run() error {
 			}
 
 			closerFunc()
-			i.moveToState(STATE_PROCESS_SEND_RESPONSES)
+			i.moveToState(STATE_SEND_RESPONSES)
+		case STATE_SEND_RESPONSES:
+			err := i.SendResponses()
+			if err != nil {
+				//todo errcheck
+				i.moveToState(STATE_PUBKEY_SEND)
+				panic(err)
+			}
+			i.moveToState(STATE_PROCESS_RESPONSES)
+
+		case STATE_PROCESS_RESPONSES:
+			err := i.ProcessResponses()
+			if err != nil {
+				//todo errcheck
+				i.moveToState(STATE_PUBKEY_SEND)
+				panic(err)
+			}
+			i.moveToState(STATE_PROCESS_JUSTIFICATIONS)
+		case STATE_PROCESS_JUSTIFICATIONS:
+			err := i.ProcessJustifications()
+			if err != nil {
+				//todo errcheck
+				i.moveToState(STATE_PUBKEY_SEND)
+				panic(err)
+			}
+			i.moveToState(STATE_PROCESS_Commits)
+		case STATE_PROCESS_Commits:
+			err := i.ProcessCommits()
+			if err != nil {
+				//todo errcheck
+				i.moveToState(STATE_PUBKEY_SEND)
+				panic(err)
+			}
+			i.moveToState(STATE_PROCESS_Complaints)
+		case STATE_PROCESS_Complaints:
+			err := i.ProcessComplaints()
+			if err != nil {
+				//todo errcheck
+				i.moveToState(STATE_PUBKEY_SEND)
+				panic(err)
+			}
+			i.moveToState(STATE_PROCESS_ReconstructCommits)
+		case STATE_PROCESS_ReconstructCommits:
+			err := i.ProcessComplaints()
+			if err != nil {
+				//todo errcheck
+				i.moveToState(STATE_PUBKEY_SEND)
+				panic(err)
+			}
+			fmt.Println("DKG finished:", i.DkgRabin.Finished())
+			return nil
 
 		default:
-			fmt.Println("default Exit")
+
 			return errors.New("unknown state")
 		}
 	}
