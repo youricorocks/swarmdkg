@@ -7,4 +7,7 @@ Swarm is used as a transport layer with an additional `Stream` abstraction: a co
 BLS signatures are user to implement simple but efficient VRF.
 
 ## Idea
-The main idea of the project is to try PoC of DKG and VRF not depending of blockchain state and gas usage.
+The main idea of the project is to try PoC of DKG and VRF not depending of blockchain state and gas usage. It could be used in decentralized gaming.
+
+## Test
+There is a test `TestDKG` that implements an example of random number generation using swarm test server. It could be run by `make run`
