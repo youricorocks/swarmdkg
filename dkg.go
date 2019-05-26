@@ -3,6 +3,7 @@ package swarmdkg
 import (
 	"bytes"
 	"encoding/gob"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -106,8 +107,8 @@ type DKGInstance struct {
 	DkgRabin  *rabin.DistKeyGenerator
 }
 
-func (i *DKGInstance)round(k int)  {
-	i.roundID=k
+func (i *DKGInstance) round(k int) {
+	i.roundID = k
 }
 func (i *DKGInstance) SendPubkey() error {
 	i.KeyPair = key.NewKeyPair(i.Suite)
@@ -116,14 +117,14 @@ func (i *DKGInstance) SendPubkey() error {
 		return err
 	}
 	b, err := json.Marshal(DKGMessage{
-		Data:publicKeyBin,
-		ReqID:i.roundID,
+		Data:  publicKeyBin,
+		ReqID: i.roundID,
 	})
 	if err != nil {
 		return err
 	}
 	i.Streamer.Broadcast(b)
-	time.Sleep(2*time.Second)
+	time.Sleep(2 * time.Second)
 	return nil
 }
 
@@ -132,9 +133,9 @@ func (i *DKGInstance) ReceivePubkeys() error {
 	for {
 		select {
 		case k := <-ch:
-			msg:=DKGMessage{}
+			msg := DKGMessage{}
 			json.Unmarshal(k, &msg)
-			if msg.ReqID!=i.roundID {
+			if msg.ReqID != i.roundID {
 				continue
 			}
 
@@ -144,16 +145,46 @@ func (i *DKGInstance) ReceivePubkeys() error {
 				i.pubkeys = i.pubkeys[:0]
 				return err
 			}
+
 			i.pubkeys = append(i.pubkeys, point)
 		case <-time.After(TIMEOUT_FOR_STATE):
 			i.pubkeys = i.pubkeys[:0]
 			return timeoutErr
 		}
-		if len(i.pubkeys) == i.NumOfNodes {
+		if len(i.pubkeys) == i.NumOfNodes*2 {
+			i.pubkeys = uniquePublicKeys(i.pubkeys)
+
+			sort.Slice(i.pubkeys, func(k, m int) bool {
+				d1, _ := i.pubkeys[k].MarshalBinary()
+				d2, _ := i.pubkeys[m].MarshalBinary()
+				res := bytes.Compare(d1, d2)
+
+				if res == 0 {
+					fmt.Println("ERROR!", i.SignerIdx, i.pubkeys[k].String(), i.pubkeys[m].String())
+				}
+				return res > 0
+			})
+
+			fmt.Println("$$$$$$$$$$$$$$$$$$$$$$$$$", i.SignerIdx, len(i.pubkeys), i.pubkeys)
 			break
 		}
 	}
 	return nil
+}
+
+func uniquePublicKeys(pubkeys []kyber.Point) []kyber.Point {
+	keys := make(map[string]struct{})
+	var list []kyber.Point
+	for _, pubkey := range pubkeys {
+		data, _ := pubkey.MarshalBinary()
+		dataHex := hex.EncodeToString(data)
+
+		if _, value := keys[dataHex]; !value {
+			keys[dataHex] = struct{}{}
+			list = append(list, pubkey)
+		}
+	}
+	return list
 }
 
 func (i *DKGInstance) SendDeals() error {
@@ -203,7 +234,7 @@ func (i *DKGInstance) SendDeals() error {
 		}
 
 		i.Streamer.Broadcast(msgBin)
-		time.Sleep(2*time.Second)
+		time.Sleep(2 * time.Second)
 	}
 	return nil
 }
@@ -211,7 +242,7 @@ func (i *DKGInstance) ProcessDeals() error {
 	ch := i.Streamer.Read()
 	numOfDeals := i.NumOfNodes - 1
 	respList := make([]*rabin.Response, 0)
-	m:=make(map[int]struct {})
+	m := make(map[int]struct{})
 
 	for {
 		select {
@@ -223,18 +254,18 @@ func (i *DKGInstance) ProcessDeals() error {
 				fmt.Println(i.Index, "0 ------- err", err)
 				return err
 			}
-			if msg.ReqID!=i.roundID {
+			if msg.ReqID != i.roundID {
 				fmt.Println("fuck round", deal)
 				continue
 			}
 			if msg.ToIndex != i.Index {
 				continue
 			}
-			_,ok:=m[msg.From]
+			_, ok := m[msg.From]
 			if ok {
 				continue
 			}
-			m[msg.From]= struct{}{}
+			m[msg.From] = struct{}{}
 
 			dd := &rabin.Deal{
 				Deal: &vss.EncryptedDeal{
