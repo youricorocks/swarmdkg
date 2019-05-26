@@ -69,14 +69,17 @@ func Verify(g kyber.Group, public kyber.Point, msg, sig []byte) error {
 		return fmt.Errorf("schnorr: signature of invalid length %d instead of %d", len(sig), sigSize)
 	}
 	if err := R.UnmarshalBinary(sig[:pointSize]); err != nil {
+		fmt.Println("****1*****", err)
 		return err
 	}
 	if err := s.UnmarshalBinary(sig[pointSize:]); err != nil {
+		fmt.Println("****2*****", err)
 		return err
 	}
 	// recompute hash(public || R || msg)
 	h, err := hash(g, public, R, msg)
 	if err != nil {
+		fmt.Println("****3*****", err)
 		return err
 	}
 

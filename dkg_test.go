@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"math/rand"
 )
 
 // Test Swarm feeds using the raw update methods
@@ -240,7 +241,7 @@ func TestDKG(t *testing.T) {
 		s, _ :=  newTestSigner()
 		signers = append(signers, s)
 	}
-
+	roundID:=rand.Int()
 	wg := sync.WaitGroup{}
 	wg.Add(numOfDKGNodes)
 	srv := GetTestServer()
@@ -248,6 +249,7 @@ func TestDKG(t *testing.T) {
 		localI := i
 		go func() {
 			dkg := NewDkg(srv, localI, bn256.NewSuiteG2(), numOfDKGNodes, threshold)
+			dkg.round(roundID)
 			err := dkg.Run()
 			if err != nil {
 				t.Log(err)

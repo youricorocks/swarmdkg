@@ -374,6 +374,7 @@ func NewVerifier(suite Suite, longterm kyber.Scalar, dealerKey kyber.Point,
 func (v *Verifier) ProcessEncryptedDeal(e *EncryptedDeal) (*Response, error) {
 	d, err := v.decryptDeal(e)
 	if err != nil {
+		fmt.Println("=====1===== ", err)
 		return nil, err
 	}
 	if d.SecShare.I != v.index {
@@ -384,6 +385,7 @@ func (v *Verifier) ProcessEncryptedDeal(e *EncryptedDeal) (*Response, error) {
 
 	sid, err := sessionID(v.suite, v.dealer, v.verifiers, d.Commitments, t)
 	if err != nil {
+		fmt.Println("=====2===== ", err)
 		return nil, err
 	}
 
@@ -397,6 +399,7 @@ func (v *Verifier) ProcessEncryptedDeal(e *EncryptedDeal) (*Response, error) {
 		Approved:  true,
 	}
 	if err = v.VerifyDeal(d, true); err != nil {
+		fmt.Println("=====3===== ", err)
 		r.Approved = false
 	}
 
@@ -405,10 +408,12 @@ func (v *Verifier) ProcessEncryptedDeal(e *EncryptedDeal) (*Response, error) {
 	}
 
 	if r.Signature, err = schnorr.Sign(v.suite, v.longterm, r.Hash(v.suite)); err != nil {
+		fmt.Println("=====4===== ", err)
 		return nil, err
 	}
 
 	if err = v.aggregator.addResponse(r); err != nil {
+		fmt.Println("=====5===== ", err)
 		return nil, err
 	}
 	return r, nil
@@ -417,10 +422,12 @@ func (v *Verifier) ProcessEncryptedDeal(e *EncryptedDeal) (*Response, error) {
 func (v *Verifier) decryptDeal(e *EncryptedDeal) (*Deal, error) {
 	ephBuff, err := e.DHKey.MarshalBinary()
 	if err != nil {
+		fmt.Println(".........0......",err)
 		return nil, err
 	}
 	// verify signature
 	if err := schnorr.Verify(v.suite, v.dealer, ephBuff, e.Signature); err != nil {
+		fmt.Println(".........1......",err)
 		return nil, err
 	}
 
@@ -428,10 +435,12 @@ func (v *Verifier) decryptDeal(e *EncryptedDeal) (*Deal, error) {
 	pre := dhExchange(v.suite, v.longterm, e.DHKey)
 	gcm, err := newAEAD(v.suite.Hash, pre, v.hkdfContext)
 	if err != nil {
+		fmt.Println(".........2......",err)
 		return nil, err
 	}
 	decrypted, err := gcm.Open(nil, e.Nonce, e.Cipher, v.hkdfContext)
 	if err != nil {
+		fmt.Println(".........3......",err)
 		return nil, err
 	}
 	deal := &Deal{}
