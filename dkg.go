@@ -209,8 +209,6 @@ func (i *DKGInstance) SendDeals() error {
 	}
 
 	for toIndex, deal := range deals {
-		fmt.Println("*** X", i.Index, toIndex, deal.Index, *deal.Deal)
-
 		b := bytes.NewBuffer(nil)
 		err = gob.NewEncoder(b).Encode(deal)
 		if err != nil {
@@ -243,20 +241,16 @@ func (i *DKGInstance) ProcessDeals() error {
 		select {
 		case deal := <-ch:
 			if _, ok := dealsCache[hex.EncodeToString(deal)]; ok {
-				fmt.Println("old deal")
 				continue
 			}
 			dealsCache[hex.EncodeToString(deal)] = struct{}{}
 
 			var msg DKGMessage
-			fmt.Println(i.Index, "** deal - ", string(deal))
 			err := json.Unmarshal(deal, &msg)
 			if err != nil {
-				fmt.Println(i.Index, "0 ------- err", err)
 				return err
 			}
 			if msg.ReqID != i.roundID {
-				fmt.Println("fuck round", deal)
 				continue
 			}
 			if msg.ToIndex != i.Index {
@@ -272,20 +266,14 @@ func (i *DKGInstance) ProcessDeals() error {
 			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
 			err = dec.Decode(dd)
 			if err != nil {
-				fmt.Println(i.Index, "1 ------- err", err)
 				return err
 			}
 
 			resp, err := i.DkgRabin.ProcessDeal(dd)
 			if err != nil {
-				fmt.Println("*** 1", deal)
-				fmt.Println("*** 2", msg.From, msg.ToIndex, dd.Index, *dd.Deal)
-				fmt.Println("fuck 3")
 				return err
 			}
 			i.responses = append(i.responses, resp)
-			fmt.Println("*** 3", msg.From, msg.ToIndex, dd.Index, *dd.Deal)
-			fmt.Println("*** 4", numOfDeals, deal)
 			respList = append(respList, resp)
 			numOfDeals--
 		case <-time.After(TIMEOUT_FOR_STATE):
@@ -447,7 +435,6 @@ func (i *DKGInstance) ProcessCommits() error {
 	if err != nil {
 		return err
 	}
-	fmt.Println("sc len", len(commits.Commitments))
 
 	buf := bytes.NewBuffer(nil)
 	err = gob.NewEncoder(buf).Encode(commits)
@@ -491,7 +478,7 @@ func (i *DKGInstance) ProcessCommits() error {
 			if msg.Type != MESSAGE_SECRET_COMMITS {
 				continue
 			}
-			fmt.Println(i.Index, msg.From, string(commit))
+
 			commitData := &rabin.SecretCommits{}
 			for j := 0; j < len(i.DkgRabin.QUAL())-1; j++ {
 				commitData.Commitments = append(commitData.Commitments, i.Suite.Point())
@@ -675,7 +662,6 @@ func (i *DKGInstance) Run() error {
 	return nil
 }
 func (i *DKGInstance) moveToState(state int) {
-	fmt.Println("Move form", i.State, "to", state)
 	i.State = state
 	time.Sleep(2 * time.Second)
 }
