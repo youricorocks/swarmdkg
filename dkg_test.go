@@ -294,7 +294,7 @@ func TestBzzStreamBroadcastGetManyTimesManyStreams(t *testing.T) {
 	fmt.Println("done")
 }
 
-func TestMockDKG(t *testing.T) {
+func TestDKG(t *testing.T) {
 	numOfDKGNodes := 4
 	threshold := 3
 	chans := NewReadChans(numOfDKGNodes)
@@ -342,7 +342,7 @@ func TestMockDKG(t *testing.T) {
 
 }
 
-func TestDKG(t *testing.T) {
+func TestDKGStream(t *testing.T) {
 	numOfDKGNodes := 4
 	threshold := 3
 
