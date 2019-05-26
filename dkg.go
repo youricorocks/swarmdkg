@@ -273,6 +273,7 @@ func (i *DKGInstance) ProcessDeals() error {
 
 			resp, err := i.DkgRabin.ProcessDeal(dd)
 			if err != nil {
+				ch <- deal
 				return err
 			}
 			i.responses = append(i.responses, resp)
