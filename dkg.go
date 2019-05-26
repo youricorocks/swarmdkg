@@ -248,6 +248,7 @@ func (i *DKGInstance) ProcessDeals() error {
 			var msg DKGMessage
 			err := json.Unmarshal(deal, &msg)
 			if err != nil {
+				ch <- deal
 				return err
 			}
 			if msg.ReqID != i.roundID {
@@ -266,6 +267,7 @@ func (i *DKGInstance) ProcessDeals() error {
 			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
 			err = dec.Decode(dd)
 			if err != nil {
+				ch <- deal
 				return err
 			}
 
@@ -339,6 +341,7 @@ func (i *DKGInstance) ProcessResponses() error {
 			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
 			err = dec.Decode(r)
 			if err != nil {
+				ch <- resp
 				return err
 			}
 
