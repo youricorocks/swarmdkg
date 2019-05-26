@@ -306,6 +306,7 @@ func (d *DistKeyGenerator) ProcessDeal(dd *Deal) (*Response, error) {
 		return nil, err
 	}
 	if err := schnorr.Verify(d.suite, pub, buff, dd.Signature); err != nil {
+		fmt.Println("xxx err", *dd)
 		return nil, err
 	}
 

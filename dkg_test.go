@@ -228,7 +228,7 @@ func TestBzzStreamBroadcastGetManyTimesManyStreams(t *testing.T) {
 		for idx := 0; idx < 3; idx++ {
 			var updateData [][]byte
 			for i := 0; i < numUsers; i++ {
-				updateData = append(updateData, testutil.RandomBytes(i+idx, 20+i+idx))
+				updateData = append(updateData, testutil.RandomBytes(i+idx+streamCount, 20+i+idx))
 			}
 
 			wg := sync.WaitGroup{}

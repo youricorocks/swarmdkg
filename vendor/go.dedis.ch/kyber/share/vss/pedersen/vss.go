@@ -397,6 +397,7 @@ func (v *Verifier) ProcessEncryptedDeal(e *EncryptedDeal) (*Response, error) {
 func (v *Verifier) decryptDeal(e *EncryptedDeal) (*Deal, error) {
 	// verify signature
 	if err := schnorr.Verify(v.suite, v.dealer, e.DHKey, e.Signature); err != nil {
+		fmt.Println("xxx 2", *e)
 		return nil, err
 	}
 

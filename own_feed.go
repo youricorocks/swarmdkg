@@ -49,7 +49,7 @@ func (own *MyFeed) Broadcast(msg []byte) error {
 
 		own.manifestHash = manifestHash.Hex()
 		own.counter++
-		fmt.Println("broadcast first", own.User.String(), own.counter, own.manifestHash, msg)
+		fmt.Println("broadcast first", own.User.String(), own.Topic, own.counter, own.manifestHash, msg)
 
 		own.Unlock()
 		return nil
@@ -93,7 +93,7 @@ func (own *MyFeed) Broadcast(msg []byte) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("post feed returned %v", statusCode)
+		return fmt.Errorf("post feed returned %v - %v", statusCode, testUrl.String())
 	}
 
 	own.Lock()
@@ -135,7 +135,7 @@ func (own *MyFeed) firstUpdate(msg []byte) (*storage.Address, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("err %s", resp.Status)
+		return nil, fmt.Errorf("err %s - %v", resp.Status, testUrl.String())
 	}
 
 	b, err := ioutil.ReadAll(resp.Body)
