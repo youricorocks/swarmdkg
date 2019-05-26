@@ -2,12 +2,14 @@ package swarmdkg
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"github.com/ethereum/go-ethereum/swarm/api"
 	"github.com/ethereum/go-ethereum/swarm/api/http"
 	"github.com/ethereum/go-ethereum/swarm/storage/feed"
 	"github.com/ethereum/go-ethereum/swarm/testutil"
 	"go.dedis.ch/kyber/pairing/bn256"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -160,14 +162,21 @@ func TestBzzStreamBroadcastGetManyTimes(t *testing.T) {
 			updateData = append(updateData, testutil.RandomBytes(i+idx, 20+i+idx))
 		}
 
-		for i, stream := range streams {
-			stream.Broadcast(updateData[i])
+		wg := sync.WaitGroup{}
+		wg.Add(len(streams))
+		for i := range streams {
+			i := i
+			go func() {
+				streams[i].Broadcast(updateData[i])
+				wg.Done()
+			}()
 		}
+		wg.Wait()
 
 		//wait for a broadcast
-		time.Sleep(1 * time.Second)
+		time.Sleep(2 * time.Second)
 
-		wg := sync.WaitGroup{}
+		wg = sync.WaitGroup{}
 		for i := range streams {
 			wg.Add(1)
 
@@ -209,6 +218,77 @@ func TestBzzStreamBroadcastGetManyTimes(t *testing.T) {
 	fmt.Println("done")
 }
 
+func TestBzzStreamBroadcastGetManyTimesManyStreams(t *testing.T) {
+	const numUsers = 5
+
+	for streamCount := 0; streamCount < 2; streamCount++ {
+		streams, closerFunc := getStreams(t, numUsers, "some-topic"+strconv.Itoa(streamCount))
+
+		for idx := 0; idx < 3; idx++ {
+			var updateData [][]byte
+			for i := 0; i < numUsers; i++ {
+				updateData = append(updateData, testutil.RandomBytes(i+idx, 20+i+idx))
+			}
+
+			wg := sync.WaitGroup{}
+			wg.Add(len(streams))
+			for i := range streams {
+				i := i
+				go func() {
+					streams[i].Broadcast(updateData[i])
+					wg.Done()
+				}()
+			}
+			wg.Wait()
+
+			//wait for a broadcast
+			time.Sleep(2 * time.Second)
+
+			wg = sync.WaitGroup{}
+			for i := range streams {
+				wg.Add(1)
+
+				go func(i int) {
+					count := 0
+					defer wg.Done()
+
+					for {
+						select {
+						case msg := <-streams[i].Read():
+							isWaited := false
+							for _, data := range updateData {
+								if bytes.Equal(msg, data) {
+									isWaited = true
+								}
+							}
+							if !isWaited {
+								fmt.Println("stream got unexpected value", i, msg, updateData)
+								continue
+							}
+
+							count++
+							if count == len(updateData) {
+								// successful case
+								fmt.Println("successful case")
+								return
+							}
+						case <-time.After(5 * time.Second):
+							fmt.Println("stream timeouted with", i, count)
+							t.Fatal("stream timeouted with", i, count)
+							return
+						}
+					}
+				}(i)
+			}
+			wg.Wait()
+		}
+		closerFunc()
+		fmt.Println("done stream")
+	}
+
+	fmt.Println("done")
+}
+
 /*
 func TestMockDKG(t *testing.T) {
 	numOfDKGNodes := 4
@@ -237,17 +317,19 @@ func TestDKG(t *testing.T) {
 
 	var signers []*feed.GenericSigner
 	for idx := 0; idx < numOfDKGNodes; idx++ {
-		s, _ :=  newTestSigner()
+		s, _ := newTestSigner()
 		signers = append(signers, s)
 	}
 
 	wg := sync.WaitGroup{}
 	wg.Add(numOfDKGNodes)
 	srv := GetTestServer()
+	var dkgs []*DKGInstance
 	for i := 0; i < numOfDKGNodes; i++ {
 		localI := i
 		go func() {
 			dkg := NewDkg(srv, localI, bn256.NewSuiteG2(), numOfDKGNodes, threshold)
+			dkgs = append(dkgs, dkg)
 			err := dkg.Run()
 			if err != nil {
 				t.Log(err)
@@ -256,6 +338,61 @@ func TestDKG(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+
+	for i := 0; i < numOfDKGNodes; i++ {
+		localI := i
+		go func() {
+			dkg := dkgs[localI]
+
+			verifier, err := dkg.GetVerifier()
+			if err != nil {
+				t.Log(err)
+			}
+
+			randomRound := 0
+			previousRandom := []byte("some initial vector")
+			for {
+				stream, closerFunc := GenerateStream(dkg.Server, signers, dkg.SignerIdx, "random"+strconv.Itoa(randomRound))
+				time.Sleep(2*time.Second)
+
+				mySign, err := verifier.Sign(previousRandom)
+				if err != nil {
+					t.Log(err)
+				}
+
+				stream.Broadcast(mySign)
+
+				got := 0
+				var signs [][]byte
+				for msg := range stream.Read() {
+					err = verifier.VerifyRandomShare(previousRandom, msg)
+					if err != nil {
+						t.Log(err)
+					} else {
+						signs = append(signs, msg)
+						got++
+					}
+
+					if got == numOfDKGNodes {
+						break
+					}
+				}
+
+				newRandom, err := verifier.Recover(previousRandom, signs)
+				if err != nil {
+					t.Log(err)
+				}
+
+				fmt.Printf("DONE Random round %d - random %s\n", randomRound, hex.EncodeToString(newRandom))
+
+				closerFunc()
+				randomRound++
+				previousRandom = newRandom
+			}
+		}()
+	}
+
+	time.Sleep(10*time.Minute)
 }
 
 func getStreams(t *testing.T, numUsers int, topic string) (streams []*Stream, closer func()) {

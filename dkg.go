@@ -1,21 +1,23 @@
 package swarmdkg
 
 import (
-	"encoding/json"
-	"fmt"
-	"github.com/ethereum/go-ethereum/swarm/storage/feed"
-	"github.com/pkg/errors"
-	"go.dedis.ch/kyber"
-	"go.dedis.ch/kyber/pairing/bn256"
-	rabin "go.dedis.ch/kyber/share/dkg/rabin"
-	"go.dedis.ch/kyber/share/vss/rabin"
-	"sync"
-
 	"bytes"
 	"encoding/gob"
-	"go.dedis.ch/kyber/util/key"
+	"errors"
+	"fmt"
 	"sort"
+	"sync"
 	"time"
+
+	"github.com/ethereum/go-ethereum/swarm/storage/feed"
+	"go.dedis.ch/kyber"
+	"go.dedis.ch/kyber/pairing/bn256"
+	"go.dedis.ch/kyber/share"
+	rabin "go.dedis.ch/kyber/share/dkg/rabin"
+	"go.dedis.ch/kyber/share/vss/rabin"
+	"go.dedis.ch/kyber/sign/bls"
+	"go.dedis.ch/kyber/sign/tbls"
+	"go.dedis.ch/kyber/util/key"
 )
 
 const (
@@ -82,7 +84,7 @@ type DKGInstance struct {
 
 	pubkeys  []kyber.Point
 	Index    int
-	dkgRabin *rabin.DistKeyGenerator
+	DkgRabin *rabin.DistKeyGenerator
 }
 
 func (i *DKGInstance) SendPubkey() error {
@@ -92,7 +94,7 @@ func (i *DKGInstance) SendPubkey() error {
 		return err
 	}
 	i.Streamer.Broadcast(publicKeyBin)
-	time.Sleep(2*time.Second)
+	time.Sleep(2 * time.Second)
 	return nil
 }
 
@@ -135,16 +137,18 @@ func (i *DKGInstance) SendDeals() error {
 	}
 
 	var err error
-	i.dkgRabin, err = rabin.NewDistKeyGenerator(i.Suite, i.KeyPair.Private, i.pubkeys, i.Treshold)
+	i.DkgRabin, err = rabin.NewDistKeyGenerator(i.Suite, i.KeyPair.Private, i.pubkeys, i.Treshold)
 	if err != nil {
 		return fmt.Errorf("Dkg instance init error: %v", err)
 	}
-	deals, err := i.dkgRabin.Deals()
+	deals, err := i.DkgRabin.Deals()
 	if err != nil {
 		return fmt.Errorf("deal generation error: %v", err)
 	}
 
 	for toIndex, deal := range deals {
+		fmt.Println("*** X", i.Index, toIndex, deal.Index, *deal.Deal)
+
 		b := bytes.NewBuffer(nil)
 		err = gob.NewEncoder(b).Encode(deal)
 		if err != nil {
@@ -156,13 +160,15 @@ func (i *DKGInstance) SendDeals() error {
 			ToIndex: toIndex,
 			From:    i.Index,
 		}
-		msgBin, err := json.Marshal(msg)
+
+		b = bytes.NewBuffer(nil)
+		err = gob.NewEncoder(b).Encode(msg)
 		if err != nil {
 			return err
 		}
 
-		i.Streamer.Broadcast(msgBin)
-		time.Sleep(2*time.Second)
+		i.Streamer.Broadcast(b.Bytes())
+		time.Sleep(2 * time.Second)
 	}
 	return nil
 }
@@ -175,7 +181,8 @@ func (i *DKGInstance) ProcessDeals() error {
 		select {
 		case deal := <-ch:
 			var msg DKGMessage
-			err := json.Unmarshal(deal, &msg)
+			dec := gob.NewDecoder(bytes.NewBuffer(deal))
+			err := dec.Decode(&msg)
 			if err != nil {
 				fmt.Println("fuck 1")
 				return err
@@ -190,21 +197,21 @@ func (i *DKGInstance) ProcessDeals() error {
 				},
 			}
 
-			dec := gob.NewDecoder(bytes.NewBuffer(msg.Data))
+			dec = gob.NewDecoder(bytes.NewBuffer(msg.Data))
 			err = dec.Decode(dd)
 			if err != nil {
 				fmt.Println("fuck 2")
 				return err
 			}
 
-			resp, err := i.dkgRabin.ProcessDeal(dd)
+			resp, err := i.DkgRabin.ProcessDeal(dd)
 			if err != nil {
 				fmt.Println("*** 1", deal)
-				fmt.Println("*** 2", dd.Index, *dd.Deal)
+				fmt.Println("*** 2", msg.From, msg.ToIndex, dd.Index, *dd.Deal)
 				fmt.Println("fuck 3")
 				return err
 			}
-			fmt.Println("*** 3", dd.Index, *dd.Deal)
+			fmt.Println("*** 3", msg.From, msg.ToIndex, dd.Index, *dd.Deal)
 			fmt.Println("*** 4", deal)
 			respList = append(respList, resp)
 			numOfDeals--
@@ -257,9 +264,9 @@ func (i *DKGInstance) Run() error {
 	for {
 		switch i.State {
 		case STATE_PUBKEY_SEND:
-			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx,"pubkey")
+			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx, "pubkey")
 			fmt.Println("xxx 1", i.SignerIdx, i.Index, i.Streamer)
-			time.Sleep(time.Second)
+			time.Sleep(2 * time.Second)
 
 			err := i.SendPubkey()
 			if err != nil {
@@ -280,9 +287,9 @@ func (i *DKGInstance) Run() error {
 			closerFunc()
 			i.moveToState(STATE_SEND_DEALS)
 		case STATE_SEND_DEALS:
-			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx,"deals")
+			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx, "deals")
 			fmt.Println("xxx 2", i.SignerIdx, i.Index, i.Streamer)
-			time.Sleep(time.Second)
+			time.Sleep(2 * time.Second)
 
 			err := i.SendDeals()
 			if err != nil {
@@ -312,5 +319,88 @@ func (i *DKGInstance) Run() error {
 func (i *DKGInstance) moveToState(state int) {
 	fmt.Println("Move form", i.State, "to", state)
 	i.State = state
-	time.Sleep(2*time.Second)
+	time.Sleep(2 * time.Second)
+}
+
+func (i *DKGInstance) GetVerifier() (*BLSVerifier, error) {
+	if i.DkgRabin == nil || !i.DkgRabin.Finished() {
+		return nil, errors.New("not ready yet")
+	}
+
+	distKeyShare, err := i.DkgRabin.DistKeyShare()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get DistKeyShare: %v", err)
+	}
+
+	var (
+		masterPubKey = share.NewPubPoly(bn256.NewSuiteG2(), nil, distKeyShare.Commitments())
+		newShare     = &BLSShare{
+			ID:   i.Index,
+			Pub:  &share.PubShare{I: i.Index, V: i.KeyPair.Public},
+			Priv: distKeyShare.PriShare(),
+		}
+	)
+
+	return NewBLSVerifier(masterPubKey, newShare, i.Treshold, i.NumOfNodes), nil
+}
+
+type BLSShare struct {
+	ID   int
+	Pub  *share.PubShare
+	Priv *share.PriShare
+}
+
+type BLSVerifier struct {
+	Keypair      *BLSShare // This verifier's BLSShare.
+	masterPubKey *share.PubPoly
+	suiteG1      *bn256.Suite
+	suiteG2      *bn256.Suite
+	t            int
+	n            int
+}
+
+func NewBLSVerifier(masterPubKey *share.PubPoly, sh *BLSShare, t, n int) *BLSVerifier {
+	return &BLSVerifier{
+		masterPubKey: masterPubKey,
+		Keypair:      sh,
+		suiteG1:      bn256.NewSuiteG1(),
+		suiteG2:      bn256.NewSuiteG2(),
+		t:            t,
+		n:            n,
+	}
+}
+
+func (m *BLSVerifier) Sign(data []byte) ([]byte, error) {
+	sig, err := tbls.Sign(m.suiteG1, m.Keypair.Priv, data)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sing random data with key %v %v with error %v", m.Keypair.Pub, data, err)
+	}
+
+	return sig, nil
+}
+
+func (m *BLSVerifier) VerifyRandomShare(prevRandomData, currRandomData []byte) error {
+	// Check that the signature itself is correct for this validator.
+	if err := tbls.Verify(m.suiteG1, m.masterPubKey, prevRandomData, currRandomData); err != nil {
+		return fmt.Errorf("signature of share is corrupt: %v. prev random: %v; current random: %v", err, prevRandomData, currRandomData)
+	}
+
+	return nil
+}
+
+func (m *BLSVerifier) VerifyRandomData(prevRandomData, currRandomData []byte) error {
+	if err := bls.Verify(m.suiteG1, m.masterPubKey.Commit(), prevRandomData, currRandomData); err != nil {
+		return fmt.Errorf("signature is corrupt: %v. prev random: %v; current random: %v", err, prevRandomData, currRandomData)
+	}
+
+	return nil
+}
+
+func (m *BLSVerifier) Recover(msg []byte, sigs [][]byte) ([]byte, error) {
+	aggrSig, err := tbls.Recover(m.suiteG1, m.masterPubKey, msg, sigs, m.t, m.n)
+	if err != nil {
+		return nil, fmt.Errorf("failed to recover aggregate signature: %v", err)
+	}
+
+	return aggrSig, nil
 }

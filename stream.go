@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/JekaMas/awg"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/swarm/api"
 	"github.com/ethereum/go-ethereum/swarm/api/http"
 )
@@ -17,7 +16,7 @@ type Stream struct {
 	Own      *MyFeed
 	Feeds    []*Feed
 	Messages chan []byte
-	cache    map[string]map[common.Address]map[string]struct{} //map[topic][user][msg]struct{}
+	cache    map[string]struct{} //map[topic][user][msg]struct{}
 	close    chan struct{}
 	sync.Mutex
 }
@@ -27,7 +26,7 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 		Own:      own,
 		Feeds:    feeds,
 		Messages: make(chan []byte, 1024),
-		cache:    make(map[string]map[common.Address]map[string]struct{}),
+		cache:    make(map[string]struct{}),
 		close:    make(chan struct{}),
 	}
 
@@ -65,24 +64,14 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 					s.Lock()
 					defer s.Unlock()
 
-					_, ok := s.cache[feed.Topic]
-					if !ok {
-						s.cache[feed.Topic] = make(map[common.Address]map[string]struct{})
-					}
-
-					_, ok = s.cache[feed.Topic][feed.User]
-					if !ok {
-						s.cache[feed.Topic][feed.User] = make(map[string]struct{})
-					}
-
-					_, cached := s.cache[feed.Topic][feed.User][hex.EncodeToString(msg)]
+					_, cached := s.cache[hex.EncodeToString(msg)]
 					if cached {
 						return nil
 					}
 
-					fmt.Println("GET FROM FEED", feed.User.String(), feed.Topic, msg)
-					s.cache[feed.Topic][feed.User][hex.EncodeToString(msg)] = struct{}{}
+					s.cache[hex.EncodeToString(msg)] = struct{}{}
 					s.Messages <- msg
+					fmt.Println("GET FROM FEED", feed.User.String(), len(s.Messages), feed.Topic, msg)
 
 					return nil
 				})
