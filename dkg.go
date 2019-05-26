@@ -663,6 +663,8 @@ func (i *DKGInstance) Run() error {
 }
 func (i *DKGInstance) moveToState(state int) {
 	i.State = state
+	fmt.Println("Everything is all right. we've just passed Distributed Key Generation stage", state)
+	fmt.Println("Please wait 30-60 secs at this stage. It's just a PoC, be patient")
 	time.Sleep(2 * time.Second)
 }
 
