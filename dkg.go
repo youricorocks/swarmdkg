@@ -582,6 +582,10 @@ func (i *DKGInstance) Run() error {
 			closerFunc()
 			i.moveToState(STATE_SEND_RESPONSES)
 		case STATE_SEND_RESPONSES:
+			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx, "responses")
+			fmt.Println("xxx 3", i.SignerIdx, i.Index, i.Streamer)
+			time.Sleep(2 * time.Second)
+
 			err := i.SendResponses()
 			if err != nil {
 				//todo errcheck
@@ -597,6 +601,7 @@ func (i *DKGInstance) Run() error {
 				i.moveToState(STATE_PUBKEY_SEND)
 				panic(err)
 			}
+
 			i.moveToState(STATE_PROCESS_JUSTIFICATIONS)
 		case STATE_PROCESS_JUSTIFICATIONS:
 			err := i.ProcessJustifications()
@@ -605,14 +610,22 @@ func (i *DKGInstance) Run() error {
 				i.moveToState(STATE_PUBKEY_SEND)
 				panic(err)
 			}
+
+			closerFunc()
 			i.moveToState(STATE_PROCESS_Commits)
 		case STATE_PROCESS_Commits:
+			i.Streamer, closerFunc = GenerateStream(i.Server, signers, i.SignerIdx, "commits")
+			fmt.Println("xxx 4", i.SignerIdx, i.Index, i.Streamer)
+			time.Sleep(2 * time.Second)
+
 			err := i.ProcessCommits()
 			if err != nil {
 				//todo errcheck
 				i.moveToState(STATE_PUBKEY_SEND)
 				panic(err)
 			}
+
+			closerFunc()
 			i.moveToState(STATE_PROCESS_Complaints)
 		case STATE_PROCESS_Complaints:
 			err := i.ProcessComplaints()
