@@ -315,10 +315,16 @@ func (i *DKGInstance) ProcessResponses() error {
 	ch := i.Streamer.Read()
 	numOfResponses := (i.NumOfNodes - 1) * (i.NumOfNodes - 1)
 	just := make([]*rabin.Justification, 0)
+	responseCache := make(map[string]struct{})
 
 	for {
 		select {
 		case resp := <-ch:
+			if _, ok := responseCache[hex.EncodeToString(resp)]; ok {
+				continue
+			}
+			responseCache[hex.EncodeToString(resp)] = struct{}{}
+
 			var msg DKGMessage
 			err := json.Unmarshal(resp, &msg)
 			if err != nil {
@@ -663,7 +669,7 @@ func (i *DKGInstance) Run() error {
 }
 func (i *DKGInstance) moveToState(state int) {
 	i.State = state
-	fmt.Println("Everything is all right. we've just passed Distributed Key Generation stage", state)
+	fmt.Println("Everything is all right. we've just passed Distributed Key Generation stage", state, "of 9")
 	fmt.Println("Please wait 30-60 secs at this stage. It's just a PoC, be patient")
 	time.Sleep(2 * time.Second)
 }
