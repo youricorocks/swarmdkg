@@ -294,6 +294,54 @@ func TestBzzStreamBroadcastGetManyTimesManyStreams(t *testing.T) {
 	fmt.Println("done")
 }
 
+func TestMockDKG(t *testing.T) {
+	numOfDKGNodes := 4
+	threshold := 3
+	chans := NewReadChans(numOfDKGNodes)
+	wg := sync.WaitGroup{}
+	wg.Add(numOfDKGNodes)
+	dkgs := make([]*DKGInstance, numOfDKGNodes)
+
+	for i := 0; i < numOfDKGNodes; i++ {
+		localI := i
+		go func() {
+			dkgs[localI] = NewDkg(func(topic string) (stream Streamer, closer func()) {
+				return NewStreamerMock(chans, localI), func() {}
+			}, localI, bn256.NewSuiteG2(), numOfDKGNodes, threshold)
+			err := dkgs[localI].Run()
+			if err != nil {
+				t.Log(err)
+			}
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+
+	previousRandom := []byte("some initial vector")
+	var signs [][]byte
+	verifiers := make([]*BLSVerifier, numOfDKGNodes)
+	for j := range dkgs {
+		var err error
+		verifiers[j], err = dkgs[j].GetVerifier()
+		if err != nil {
+			t.Log(err)
+		}
+		mySign, err := verifiers[j].Sign(previousRandom)
+		if err != nil {
+			t.Log(err)
+			continue
+		}
+		signs = append(signs, mySign)
+	}
+
+	newRandom, err := verifiers[0].Recover(previousRandom, signs)
+	if err != nil {
+		t.Log(err)
+	}
+	t.Log("new random", newRandom)
+
+}
+
 func TestDKG(t *testing.T) {
 	numOfDKGNodes := 4
 	threshold := 3
@@ -307,14 +355,15 @@ func TestDKG(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(numOfDKGNodes)
 	srv := GetTestServer()
-	var dkgs []*DKGInstance
+	dkgs := make([]*DKGInstance, numOfDKGNodes)
 	for i := 0; i < numOfDKGNodes; i++ {
 		localI := i
 		go func() {
-			dkg := NewDkg(srv, localI, bn256.NewSuiteG2(), numOfDKGNodes, threshold)
-			dkg.round(roundID)
-			dkgs = append(dkgs, dkg)
-			err := dkg.Run()
+			dkgs[localI] = NewDkg(func(topic string) (stream Streamer, closer func()) {
+				return GenerateStream(srv, signers, localI, topic)
+			}, localI, bn256.NewSuiteG2(), numOfDKGNodes, threshold)
+			dkgs[localI].round(roundID)
+			err := dkgs[localI].Run()
 			if err != nil {
 				t.Log(err)
 			}
@@ -334,11 +383,11 @@ func TestDKG(t *testing.T) {
 				randomRound := 0
 				isRoundChanged := true
 				previousRandom := []byte("some initial vector")
-				var stream *Stream
+				var stream Streamer
 				var closerFunc func()
 				for {
 					if isRoundChanged {
-						stream, closerFunc = GenerateStream(dkg.Server, signers, dkg.SignerIdx, "random"+strconv.Itoa(randomRound))
+						stream, closerFunc = dkg.StreamGenerator("random" + strconv.Itoa(randomRound))
 						isRoundChanged = false
 					}
 					time.Sleep(2 * time.Second)
