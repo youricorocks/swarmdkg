@@ -151,7 +151,7 @@ func (i *DKGInstance) ReceivePubkeys() error {
 			i.pubkeys = i.pubkeys[:0]
 			return timeoutErr
 		}
-		if len(i.pubkeys) == i.NumOfNodes {
+		if len(i.pubkeys) == i.NumOfNodes*10 {
 			i.pubkeys = uniquePublicKeys(i.pubkeys)
 
 			sort.Slice(i.pubkeys, func(k, m int) bool {

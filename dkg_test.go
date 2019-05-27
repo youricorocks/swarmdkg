@@ -355,16 +355,15 @@ func TestDKG(t *testing.T) {
 	wg := sync.WaitGroup{}
 	wg.Add(numOfDKGNodes)
 	srv := GetTestServer()
-	var dkgs []*DKGInstance
+	dkgs := make([]*DKGInstance, numOfDKGNodes)
 	for i := 0; i < numOfDKGNodes; i++ {
 		localI := i
 		go func() {
-			dkg := NewDkg(func(topic string) (stream Streamer, closer func()) {
+			dkgs[localI] = NewDkg(func(topic string) (stream Streamer, closer func()) {
 				return GenerateStream(srv, signers, localI, topic)
 			}, localI, bn256.NewSuiteG2(), numOfDKGNodes, threshold)
-			dkg.round(roundID)
-			dkgs = append(dkgs, dkg)
-			err := dkg.Run()
+			dkgs[localI].round(roundID)
+			err := dkgs[localI].Run()
 			if err != nil {
 				t.Log(err)
 			}
