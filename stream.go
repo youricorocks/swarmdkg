@@ -33,7 +33,7 @@ func NewStream(own *MyFeed, feeds []*Feed) *Stream {
 
 	go func() {
 		//fixme I'm not very sure could it skip a few updates or not
-		timer := time.NewTicker(500 * time.Millisecond)
+		timer := time.NewTicker(400 * time.Millisecond)
 		defer timer.Stop()
 
 		for {
