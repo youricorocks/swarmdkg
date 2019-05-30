@@ -1,2 +1,2 @@
-run:
-	go test  -v -run "TestDKG" ./ -timeout=20m
+test:
+	go test  -v ./ -timeout=20m
